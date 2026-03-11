@@ -1,20 +1,43 @@
 import pytest
 import asyncio
-import asyncpg
-import redis.asyncio as redis
+import os
+import tempfile
+from unittest.mock import patch, MagicMock
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 from httpx import AsyncClient
 from typing import AsyncGenerator, Generator
-from fastapi import FastAPI
 
+# Set HIVEBOT_DATA to a temporary directory before importing app modules
+temp_data_dir = tempfile.mkdtemp()
+os.environ["HIVEBOT_DATA"] = temp_data_dir
+os.environ["POSTGRES_HOST"] = "localhost"
+os.environ["POSTGRES_USER"] = "hivebot"
+os.environ["POSTGRES_PASSWORD"] = "hivebot"
+os.environ["POSTGRES_DB"] = "hivebot_test"
+os.environ["REDIS_HOST"] = "localhost"
+os.environ["REDIS_PORT"] = "6379"
+os.environ["INTERNAL_API_KEY"] = "test-key"
+
+# Now import app modules after setting env vars
 from app.core.database import Base, get_db
 from app.main import app
 from app.core.config import settings
-from app.services.redis_service import redis_service
+from app.core.secrets import SecretsManager
 
-# Use a separate test database
-TEST_DATABASE_URL = "postgresql+asyncpg://hivebot:hivebot@localhost/hivebot_test"
+# Mock the secrets manager to avoid file access
+mock_secrets = MagicMock(spec=SecretsManager)
+mock_secrets.get.return_value = None
+mock_secrets.set.return_value = None
+
+# Patch the settings._secrets attribute
+@pytest.fixture(autouse=True)
+def patch_secrets():
+    with patch.object(settings, '_secrets', mock_secrets):
+        yield
+
+# Use the test database URL (already set via env vars)
+TEST_DATABASE_URL = f"postgresql+asyncpg://{os.environ['POSTGRES_USER']}:{os.environ['POSTGRES_PASSWORD']}@{os.environ['POSTGRES_HOST']}/{os.environ['POSTGRES_DB']}"
 
 @pytest.fixture(scope="session")
 def event_loop() -> Generator:
@@ -49,6 +72,7 @@ async def client(session) -> AsyncGenerator:
 
 @pytest.fixture
 async def redis_client():
+    import redis.asyncio as redis
     client = await redis.from_url("redis://localhost:6379/1", decode_responses=True)
     await client.flushdb()
     yield client
