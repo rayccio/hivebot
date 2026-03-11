@@ -34,3 +34,7 @@ docker-compose.override.yml
 .vscode/
 .idea/
 *.swp
+
+project_export.md
+export.cjs
+.setup.sh.swo
