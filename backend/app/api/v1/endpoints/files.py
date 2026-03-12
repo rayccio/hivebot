@@ -3,7 +3,7 @@ import shutil
 import uuid
 from datetime import datetime
 from typing import List
-from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
+from fastapi import APIRouter, UploadFile, File, HTTPException, Depends, status
 from fastapi.responses import FileResponse
 from ....services.agent_manager import AgentManager
 from ....services.docker_service import DockerService
@@ -16,6 +16,13 @@ async def get_agent_manager():
     docker_service = DockerService()
     return AgentManager(docker_service)
 
+def validate_filename(filename: str) -> str:
+    """Prevent path traversal and ensure safe filename."""
+    if ".." in filename or "/" in filename or "\\" in filename:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    # Optionally, you could sanitize further
+    return filename
+
 @router.post("/agents/{agent_id}/files")
 async def upload_agent_file(
     agent_id: str,
@@ -27,11 +34,24 @@ async def upload_agent_file(
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
     
+    # Validate file size
+    file.file.seek(0, os.SEEK_END)
+    file_size = file.file.tell()
+    file.file.seek(0)
+    if file_size > settings.MAX_UPLOAD_SIZE:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"File too large. Max size: {settings.MAX_UPLOAD_SIZE} bytes"
+        )
+    
+    # Validate filename
+    safe_filename = validate_filename(file.filename)
+    
     agent_dir = settings.AGENTS_DIR / agent_id
     files_dir = agent_dir / "files"
     files_dir.mkdir(parents=True, exist_ok=True)
     
-    file_path = files_dir / file.filename
+    file_path = files_dir / safe_filename
     try:
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
@@ -40,8 +60,8 @@ async def upload_agent_file(
     
     file_entry = FileEntry(
         id=str(uuid.uuid4()),
-        name=file.filename,
-        type=file.filename.split('.')[-1] if '.' in file.filename else "bin",
+        name=safe_filename,
+        type=safe_filename.split('.')[-1] if '.' in safe_filename else "bin",
         content="",
         size=os.path.getsize(file_path),
         uploaded_at=datetime.utcnow().isoformat()

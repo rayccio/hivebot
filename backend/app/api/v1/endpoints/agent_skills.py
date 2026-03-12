@@ -1,11 +1,19 @@
 from fastapi import APIRouter, HTTPException, Depends
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
+from pydantic import BaseModel
 from ....services.skill_manager import SkillManager
 from ....services.agent_manager import AgentManager
 from ....services.docker_service import DockerService
 from ....models.skill import AgentSkill
 
 router = APIRouter(prefix="/agents/{agent_id}/skills", tags=["agent-skills"])
+
+class InstallSkillRequest(BaseModel):
+    version_id: Optional[str] = None
+    config: Dict[str, Any] = {}
+
+class UpdateSkillConfigRequest(BaseModel):
+    config: Dict[str, Any]
 
 async def get_skill_manager():
     return SkillManager()
@@ -29,15 +37,15 @@ async def list_agent_skills(
 async def install_skill(
     agent_id: str,
     skill_id: str,
-    payload: dict = None,
+    request: InstallSkillRequest = None,
     skill_manager: SkillManager = Depends(get_skill_manager),
     agent_manager: AgentManager = Depends(get_agent_manager)
 ):
     agent = await agent_manager.get_agent(agent_id)
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
-    config = payload.get("config", {}) if payload else {}
-    version_id = payload.get("version_id") if payload else None
+    config = request.config if request else {}
+    version_id = request.version_id if request else None
     try:
         agent_skill = await skill_manager.install_skill(agent_id, skill_id, version_id, config)
     except ValueError as e:
@@ -62,15 +70,14 @@ async def uninstall_skill(
 async def update_skill_config(
     agent_id: str,
     skill_id: str,
-    payload: dict,
+    request: UpdateSkillConfigRequest,
     skill_manager: SkillManager = Depends(get_skill_manager),
     agent_manager: AgentManager = Depends(get_agent_manager)
 ):
     agent = await agent_manager.get_agent(agent_id)
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
-    config = payload.get("config", {})
-    agent_skill = await skill_manager.update_agent_skill_config(agent_id, skill_id, config)
+    agent_skill = await skill_manager.update_agent_skill_config(agent_id, skill_id, request.config)
     if not agent_skill:
         raise HTTPException(status_code=404, detail="Skill not installed on this agent")
     return agent_skill

@@ -114,7 +114,7 @@ class Agent(BaseModel):
     user_uid: str
     local_files: List[FileEntry] = []
     skills: List[AgentSkill] = []
-    meta: MetaInfo = Field(default_factory=MetaInfo)  # new
+    meta: MetaInfo = Field(default_factory=MetaInfo)
 
     model_config = ConfigDict(
         alias_generator=to_camel,
@@ -167,7 +167,7 @@ class AgentUpdate(BaseModel):
     channels: Optional[List[ChannelConfig]] = None
     memory: Optional[AgentMemory] = None
     local_files: Optional[List[FileEntry]] = None
-    meta: Optional[MetaInfo] = None  # new
+    meta: Optional[MetaInfo] = None
 
     model_config = ConfigDict(
         alias_generator=to_camel,
@@ -290,3 +290,7 @@ class GlobalSettings(BaseModel):
     system_name: str = "HiveBot Orchestrator"
     maintenance_mode: bool = False
     default_agent_uid: str = "10001"
+    # Rate limiting
+    rate_limit_enabled: bool = True
+    rate_limit_requests: int = 50          # requests per period
+    rate_limit_period_seconds: int = 60    # period in seconds

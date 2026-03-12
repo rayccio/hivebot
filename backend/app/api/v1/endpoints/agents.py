@@ -1,9 +1,10 @@
-from fastapi import APIRouter, HTTPException, Depends, Query
+from fastapi import APIRouter, HTTPException, Depends, Query, Request
 from typing import List, Optional
 import logging
 from ....models.types import Agent, AgentCreate, AgentUpdate
 from ....services.agent_manager import AgentManager
 from ....services.docker_service import DockerService
+from ....core.rate_limit import check_rate_limit
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -83,11 +84,15 @@ async def delete_agent(agent_id: str, manager: AgentManager = Depends(get_agent_
 
 @router.post("/{agent_id}/execute", status_code=202)
 async def execute_agent(
+    request: Request,
     agent_id: str,
     payload: dict = None,
     simulation: bool = Query(False, description="Run in simulation mode (routes tool calls to simulator)"),
     manager: AgentManager = Depends(get_agent_manager)
 ):
+    # Apply rate limiting
+    await check_rate_limit(request, limit_key="execute")
+
     try:
         input_text = payload.get("input", "") if payload else ""
         success = await manager.execute_agent(agent_id, input_text, simulation)

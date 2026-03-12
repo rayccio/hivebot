@@ -32,25 +32,39 @@ class RedisService:
                 await asyncio.sleep(delay)
         raise ConnectionError("Redis unreachable after multiple attempts")
 
+    async def get_client(self):
+        """Return the Redis client (ensure it's connected)."""
+        if not self.client:
+            await self.connect()
+        return self.client
+
     async def publish(self, channel: str, message: dict):
-        await self.client.publish(channel, json.dumps(message))
+        client = await self.get_client()
+        await client.publish(channel, json.dumps(message))
 
     async def set(self, key: str, value: Any, expire: Optional[int] = None):
+        client = await self.get_client()
         if expire:
-            await self.client.setex(key, expire, json.dumps(value))
+            await client.setex(key, expire, json.dumps(value))
         else:
-            await self.client.set(key, json.dumps(value))
+            await client.set(key, json.dumps(value))
 
     async def get(self, key: str) -> Optional[Any]:
-        val = await self.client.get(key)
+        client = await self.get_client()
+        val = await client.get(key)
         if val:
             return json.loads(val)
         return None
 
     async def delete(self, key: str):
-        await self.client.delete(key)
+        client = await self.get_client()
+        await client.delete(key)
 
     def pubsub(self):
+        # Note: pubsub should be obtained from the client directly
+        # This method assumes client is already connected; if not, it will raise
+        if not self.client:
+            raise RuntimeError("Redis client not connected. Call connect() first.")
         return self.client.pubsub()
 
     # ----------------------------
@@ -59,15 +73,17 @@ class RedisService:
     async def push_conversation_message(self, agent_id: str, message: ConversationMessage):
         """Append a message to the agent's conversation list."""
         key = f"conversation:{agent_id}"
-        await self.client.rpush(key, message.model_dump_json())
+        client = await self.get_client()
+        await client.rpush(key, message.model_dump_json())
 
     async def get_conversation(self, agent_id: str, limit: int = -1) -> List[ConversationMessage]:
         """Retrieve all or last N messages from conversation."""
         key = f"conversation:{agent_id}"
+        client = await self.get_client()
         if limit > 0:
-            items = await self.client.lrange(key, -limit, -1)
+            items = await client.lrange(key, -limit, -1)
         else:
-            items = await self.client.lrange(key, 0, -1)
+            items = await client.lrange(key, 0, -1)
         messages = []
         for item in items:
             try:
@@ -78,11 +94,13 @@ class RedisService:
         return messages
 
     async def clear_conversation(self, agent_id: str):
-        await self.client.delete(f"conversation:{agent_id}")
+        client = await self.get_client()
+        await client.delete(f"conversation:{agent_id}")
 
     async def trim_conversation(self, agent_id: str, keep_last: int = 50):
         """Keep only the last `keep_last` messages."""
         key = f"conversation:{agent_id}"
-        await self.client.ltrim(key, -keep_last, -1)
+        client = await self.get_client()
+        await client.ltrim(key, -keep_last, -1)
 
 redis_service = RedisService()

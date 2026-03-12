@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     # Default UID for agent containers
     DEFAULT_AGENT_UID: str = "10001"
 
+    # File upload limits
+    MAX_UPLOAD_SIZE: int = 10 * 1024 * 1024  # 10 MB
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

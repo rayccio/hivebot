@@ -1007,6 +1007,58 @@ export const GlobalConfig: React.FC<GlobalConfigProps> = ({
                   <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${settings.maintenanceMode ? 'left-7' : 'left-1'}`} />
                 </button>
               </div>
+
+              {/* Rate Limiting Section */}
+              <div className="border-t border-zinc-800 pt-6">
+                <h4 className="text-xs font-black uppercase tracking-widest text-emerald-500 mb-4">Rate Limiting</h4>
+                
+                <div className="flex items-center justify-between p-4 bg-zinc-950 border border-zinc-800 rounded-2xl mb-4">
+                  <div>
+                    <p className="text-xs font-bold text-zinc-200">Enable Rate Limiting</p>
+                    <p className="text-[10px] text-zinc-500">Protect public endpoints from abuse (login, execute bot).</p>
+                  </div>
+                  <button 
+                    onClick={() => onUpdateSettings({ ...settings, rateLimitEnabled: !settings.rateLimitEnabled })}
+                    className={`w-12 h-6 rounded-full relative transition-all ${settings.rateLimitEnabled ? 'bg-emerald-600' : 'bg-zinc-800'}`}
+                  >
+                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${settings.rateLimitEnabled ? 'left-7' : 'left-1'}`} />
+                  </button>
+                </div>
+
+                {settings.rateLimitEnabled && (
+                  <div className="space-y-4 pl-4">
+                    <div>
+                      <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-2">
+                        Requests per period
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="10000"
+                        value={settings.rateLimitRequests}
+                        onChange={(e) => onUpdateSettings({ ...settings, rateLimitRequests: parseInt(e.target.value) || 50 })}
+                        className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-200 focus:border-emerald-500 outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-2">
+                        Period (seconds)
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="3600"
+                        value={settings.rateLimitPeriodSeconds}
+                        onChange={(e) => onUpdateSettings({ ...settings, rateLimitPeriodSeconds: parseInt(e.target.value) || 60 })}
+                        className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-200 focus:border-emerald-500 outline-none"
+                      />
+                    </div>
+                    <p className="text-[9px] text-zinc-500 italic">
+                      Example: 50 requests per 60 seconds = ~0.8 requests/second per IP.
+                    </p>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}

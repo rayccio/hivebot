@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends, status
+from fastapi import APIRouter, HTTPException, Depends, status, Request
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
 from datetime import datetime, timedelta
@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from ....services.user_manager import UserManager
 from ....core.config import settings
 from ....models.types import GlobalSettings, UserUpdate
+from ....core.rate_limit import check_rate_limit
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -106,7 +107,13 @@ async def require_global_admin(current_user = Depends(get_current_user)):
     return current_user
 
 @router.post("/token", response_model=Token)
-async def login(form_data: OAuth2PasswordRequestForm = Depends()):
+async def login(
+    request: Request,
+    form_data: OAuth2PasswordRequestForm = Depends()
+):
+    # Apply rate limiting
+    await check_rate_limit(request, limit_key="login")
+
     user_manager = UserManager()
     user = await user_manager.authenticate_user(form_data.username, form_data.password)
     if not user:

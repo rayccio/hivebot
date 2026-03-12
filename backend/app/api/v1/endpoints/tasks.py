@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException, Depends
-from typing import List, Optional
+from typing import List, Optional, Any
+from pydantic import BaseModel
 from ....services.task_manager import TaskManager
 from ....services.agent_manager import AgentManager
 from ....services.docker_service import DockerService
@@ -9,6 +10,9 @@ from datetime import datetime
 import json
 
 router = APIRouter(prefix="/hives/{hive_id}/tasks", tags=["tasks"])
+
+class CompleteTaskRequest(BaseModel):
+    output: Any
 
 async def get_task_manager():
     return TaskManager()
@@ -50,12 +54,10 @@ async def assign_task(
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
 
-    # Simple assignment without dependency checks for now
     success = await task_manager.assign_task(task_id, agent_id)
     if not success:
         raise HTTPException(status_code=400, detail="Assignment failed")
 
-    # Notify agent via Redis
     message = {
         "type": "task_assign",
         "task_id": task_id,
@@ -71,18 +73,17 @@ async def assign_task(
 async def complete_task(
     hive_id: str,
     task_id: str,
-    payload: dict,
+    payload: CompleteTaskRequest,
     task_manager: TaskManager = Depends(get_task_manager)
 ):
     task = await task_manager.get_task(task_id)
     if not task or task.hive_id != hive_id:
         raise HTTPException(status_code=404, detail="Task not found")
 
-    output = payload.get("output")
     task = await task_manager.update_task(
         task_id,
         status=TaskStatus.COMPLETED,
-        output_data=output,
+        output_data=payload.output,
         completed_at=datetime.utcnow()
     )
     return task

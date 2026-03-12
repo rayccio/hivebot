@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException, Depends
 from typing import Dict, Any
+from pydantic import BaseModel
 from ....services.task_manager import TaskManager
 from ....services.planner import Planner
 from ....services.agent_manager import AgentManager
@@ -11,6 +12,9 @@ from datetime import datetime
 
 router = APIRouter(prefix="/hives/{hive_id}/plan", tags=["planning"])
 
+class GoalRequest(BaseModel):
+    goal: str
+
 async def get_task_manager():
     return TaskManager()
 
@@ -21,12 +25,12 @@ async def get_agent_manager():
 @router.post("")
 async def create_plan(
     hive_id: str,
-    goal: Dict[str, str],  # expects {"goal": "..."}
+    goal_req: GoalRequest,
     task_manager: TaskManager = Depends(get_task_manager),
     agent_manager: AgentManager = Depends(get_agent_manager)
 ):
     """Decompose a goal into a task graph and store it."""
-    goal_text = goal.get("goal")
+    goal_text = goal_req.goal
     if not goal_text:
         raise HTTPException(status_code=400, detail="Goal text required")
 

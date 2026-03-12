@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Body, HTTPException, Depends
+from pydantic import BaseModel
 from ....core.config import settings
 from ....models.types import GlobalSettings
 from ....services.user_manager import UserManager
@@ -7,23 +8,30 @@ from .auth import get_current_user
 
 router = APIRouter()
 
+class SetDefaultUidRequest(BaseModel):
+    default_uid: str
+
+class SetPublicUrlRequest(BaseModel):
+    public_url: str | None = None
+
 @router.get("/uid")
 async def get_default_uid(current_user = Depends(get_current_user)):
     """
     Return the default UID used for agent containers (global setting).
     """
-    # For now, return the value from config (which can be overridden by env)
     return {"default_uid": settings.DEFAULT_AGENT_UID}
 
 @router.post("/uid")
-async def set_default_uid(payload: dict = Body(...), current_user = Depends(get_current_user)):
+async def set_default_uid(
+    payload: SetDefaultUidRequest,
+    current_user = Depends(get_current_user)
+):
     """
-    Set the global default UID. This would be stored in the secrets vault.
+    Set the global default UID.
     """
-    uid = payload.get("default_uid")
+    uid = payload.default_uid
     if uid is not None:
         settings.secrets.set("DEFAULT_AGENT_UID", uid.strip())
-        # Also update the runtime setting
         settings.DEFAULT_AGENT_UID = uid.strip()
     return {"status": "ok"}
 
@@ -34,9 +42,12 @@ async def get_public_url(current_user = Depends(get_current_user)):
     return {"public_url": url}
 
 @router.post("/public-url")
-async def set_public_url(payload: dict = Body(...), current_user = Depends(get_current_user)):
+async def set_public_url(
+    payload: SetPublicUrlRequest,
+    current_user = Depends(get_current_user)
+):
     """Set the public URL. Pass null or empty string to clear."""
-    url = payload.get("public_url")
+    url = payload.public_url
     if url is not None:
         settings.secrets.set("PUBLIC_URL", url.strip() if url.strip() else None)
     return {"status": "ok"}
@@ -58,23 +69,23 @@ async def detect_public_ip(current_user = Depends(get_current_user)):
 @router.get("/global-settings", response_model=GlobalSettings)
 async def get_global_settings(current_user = Depends(get_current_user)):
     """Get all global settings."""
-    # Load from secrets or use defaults
     settings_data = settings.secrets.get("GLOBAL_SETTINGS")
     if settings_data:
         return GlobalSettings(**settings_data)
     return GlobalSettings()
 
 @router.post("/global-settings", response_model=GlobalSettings)
-async def set_global_settings(payload: GlobalSettings, current_user = Depends(get_current_user)):
+async def set_global_settings(
+    payload: GlobalSettings,
+    current_user = Depends(get_current_user)
+):
     """Update global settings."""
-    # Check if we're enabling the gateway
     old_settings_data = settings.secrets.get("GLOBAL_SETTINGS")
     old_enabled = False
     if old_settings_data:
         old_settings = GlobalSettings(**old_settings_data)
         old_enabled = old_settings.login_enabled
     
-    # If enabling gateway, we need to ensure admin has changed password
     if payload.login_enabled and not old_enabled:
         user_manager = UserManager()
         users = await user_manager.list_users()

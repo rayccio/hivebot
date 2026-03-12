@@ -108,7 +108,7 @@ export interface Agent {
   containerId: string;
   userUid?: string;
   localFiles: FileEntry[];
-  skills: AgentSkill[];   // new
+  skills: AgentSkill[];
 }
 
 export interface Message {
@@ -171,6 +171,10 @@ export interface GlobalSettings {
   systemName: string;
   maintenanceMode: boolean;
   defaultAgentUid: string;
+  // Rate limiting
+  rateLimitEnabled: boolean;
+  rateLimitRequests: number;
+  rateLimitPeriodSeconds: number;
 }
 
 export interface Hive {
