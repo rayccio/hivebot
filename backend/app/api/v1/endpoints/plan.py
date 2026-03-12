@@ -5,10 +5,15 @@ from ....services.task_manager import TaskManager
 from ....services.planner import Planner
 from ....services.agent_manager import AgentManager
 from ....services.docker_service import DockerService
+from ....services.redis_service import redis_service
 from ....models.task import Task, TaskStatus
 from ....services.hive_manager import HiveManager
+from ....core.config import settings
 import uuid
 from datetime import datetime
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/hives/{hive_id}/plan", tags=["planning"])
 
@@ -59,7 +64,8 @@ async def create_plan(
             goal_id="",  # will set after graph created
             description=t["description"],
             status=TaskStatus.PENDING,
-            created_at=datetime.utcnow()
+            created_at=datetime.utcnow(),
+            required_skills=[]  # can be extended later
         )
         tasks.append(task)
 
@@ -79,6 +85,13 @@ async def create_plan(
     # Update each task with the goal_id
     for task in tasks:
         task.goal_id = graph.goal_id
-    task_manager._save()  # quick save
+
+    # ---- NEW: If scheduler is enabled, push tasks to Redis pending queue ----
+    if settings.SCHEDULER_ENABLED:
+        for task in tasks:
+            # Use created_at timestamp as score (milliseconds)
+            score = task.created_at.timestamp() * 1000
+            await redis_service.zadd("tasks:pending", task.id, score)
+        logger.info(f"Pushed {len(tasks)} tasks to Redis pending queue")
 
     return {"goal_id": graph.goal_id, "tasks": tasks, "edges": edges}
