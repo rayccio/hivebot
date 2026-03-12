@@ -13,18 +13,23 @@ from worker.main import (
 
 @pytest.mark.asyncio
 async def test_register_agent_idle():
-    mock_redis = AsyncMock()
-    with patch('worker.main.redis.from_url', return_value=mock_redis):
+    with patch('worker.main.redis.from_url', new_callable=AsyncMock) as mock_from_url:
+        mock_redis_client = AsyncMock()
+        mock_redis_client.sadd = AsyncMock()
+        mock_redis_client.close = AsyncMock()
+        mock_from_url.return_value = mock_redis_client
+
         await register_agent_idle("agent1")
-        mock_redis.sadd.assert_awaited_once_with("agents:idle", "agent1")
-        mock_redis.close.assert_awaited_once()
+
+        mock_redis_client.sadd.assert_awaited_once_with("agents:idle", "agent1")
+        mock_redis_client.close.assert_awaited_once()
 
 @pytest.mark.asyncio
 async def test_process_think_command_registers_idle():
     # Mock DB get and update
     mock_get_agent = AsyncMock(return_value={
         'status': 'RUNNING',
-        'memory': {},
+        'memory': {'shortTerm': [], 'summary': '', 'tokenCount': 0},
         'reportingTarget': 'OWNER_DIRECT',
         'parentId': None
     })
@@ -43,15 +48,13 @@ async def test_process_think_command_registers_idle():
 
         await process_think_command("agent1", "user input", {}, simulation=False)
 
-        # Verify register_agent_idle called after status set to IDLE
-        # In our code, register_agent_idle is called after update_agent_state to IDLE
         mock_register.assert_awaited_once_with("agent1")
 
 @pytest.mark.asyncio
 async def test_process_task_assign_registers_idle():
     mock_get_agent = AsyncMock(return_value={
         'status': 'RUNNING',
-        'memory': {},
+        'memory': {'shortTerm': [], 'summary': '', 'tokenCount': 0},
         'identityMd': '',
         'soulMd': '',
         'toolsMd': ''
