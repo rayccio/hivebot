@@ -164,10 +164,15 @@ class OrchestratorService {
   }
 
   async createHive(hive: HiveCreate): Promise<Hive> {
+    const payload = {
+      name: hive.name,
+      description: hive.description,
+      global_user_md: hive.globalUserMd,
+    };
     const res = await fetch(`${this.baseUrl}/hives`, {
       method: 'POST',
       headers: this._authHeaders(),
-      body: JSON.stringify(hive),
+      body: JSON.stringify(payload),
     });
     if (!res.ok) throw new Error('Failed to create hive');
     return res.json();
@@ -182,10 +187,17 @@ class OrchestratorService {
   }
 
   async updateHive(id: string, updates: HiveUpdate): Promise<Hive> {
+    // Map camelCase frontend fields to snake_case backend fields
+    const payload: any = {};
+    if (updates.name !== undefined) payload.name = updates.name;
+    if (updates.description !== undefined) payload.description = updates.description;
+    if (updates.globalUserMd !== undefined) payload.global_user_md = updates.globalUserMd;
+    if (updates.hiveMindConfig !== undefined) payload.hive_mind_config = updates.hiveMindConfig;
+
     const res = await fetch(`${this.baseUrl}/hives/${id}`, {
       method: 'PATCH',
       headers: this._authHeaders(),
-      body: JSON.stringify(updates),
+      body: JSON.stringify(payload),
     });
     if (!res.ok) throw new Error('Failed to update hive');
     return res.json();

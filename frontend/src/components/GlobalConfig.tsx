@@ -5,12 +5,13 @@ import { HiveMindDashboard } from './HiveMindDashboard';
 import { AIProviderConfig } from './AIProviderConfig';
 import { BridgeManager } from './BridgeManager';
 import { PublicUrlConfig } from './PublicUrlConfig';
+import { SystemFiles } from './SystemFiles';
 import { LoadingSpinner } from './LoadingSpinner';
 import { toast } from 'react-hot-toast';
 import { orchestratorService } from '../services/orchestratorService';
 import { MetaBotsDashboard } from './MetaBotsDashboard';
 
-// ---------- User Modal ----------
+// ---------- User Modal (unchanged) ----------
 interface UserModalProps {
   user?: UserAccount;
   hives: Hive[];
@@ -161,7 +162,7 @@ const UserModal: React.FC<UserModalProps> = ({ user, hives, onClose, onSave }) =
   );
 };
 
-// ---------- Skill Modal ----------
+// ---------- Skill Modal (unchanged) ----------
 interface SkillModalProps {
   skill?: Skill;
   onClose: () => void;
@@ -329,7 +330,7 @@ const SkillModal: React.FC<SkillModalProps> = ({ skill, onClose, onSave }) => {
   );
 };
 
-// ---------- Version Modal ----------
+// ---------- Version Modal (unchanged) ----------
 interface VersionModalProps {
   skillId: string;
   onClose: () => void;
@@ -558,7 +559,7 @@ export const GlobalConfig: React.FC<GlobalConfigProps> = ({
   onLoadUsers,
   onRefreshSettings
 }) => {
-  const [activeTab, setActiveTab] = useState<'hive-mind' | 'users' | 'environment' | 'settings' | 'logs' | 'skills' | 'meta'>('hive-mind');
+  const [activeTab, setActiveTab] = useState<'hive-mind' | 'users' | 'environment' | 'system-files' | 'settings' | 'logs' | 'skills' | 'meta'>('hive-mind');
   const [editingUser, setEditingUser] = useState<UserAccount | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -772,6 +773,12 @@ export const GlobalConfig: React.FC<GlobalConfigProps> = ({
             Environment
           </button>
           <button 
+            onClick={() => setActiveTab('system-files')}
+            className={`text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'system-files' ? 'text-emerald-400' : 'text-zinc-500 hover:text-zinc-300'}`}
+          >
+            System Files
+          </button>
+          <button 
             onClick={() => setActiveTab('settings')}
             className={`text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'settings' ? 'text-emerald-400' : 'text-zinc-500 hover:text-zinc-300'}`}
           >
@@ -926,6 +933,8 @@ export const GlobalConfig: React.FC<GlobalConfigProps> = ({
             <PublicUrlConfig />
           </div>
         )}
+
+        {activeTab === 'system-files' && <SystemFiles />}
 
         {activeTab === 'settings' && (
           <div className="space-y-8 max-w-3xl mx-auto">

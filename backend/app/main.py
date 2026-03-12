@@ -11,6 +11,7 @@ from .services.docker_service import DockerService
 from .services.litellm_service import generate_with_messages
 from .services.user_manager import UserManager
 from .services.task_manager import TaskManager
+from .services.vector_service import vector_service
 from .models.types import UserCreate, UserRole, GlobalSettings, AgentUpdate
 from .api.v1.endpoints.bridges import BRIDGE_CONTAINERS
 from .core.database import engine, Base
@@ -122,6 +123,11 @@ def create_app() -> FastAPI:
         await redis_service.wait_ready()
         logger.info("Redis connected")
 
+        # Connect to Qdrant with retries
+        await vector_service.connect()
+        await vector_service.ensure_collection(dim=384)
+        logger.info("Qdrant ready")
+
         # Initialize global settings if not present
         if not settings.secrets.get("GLOBAL_SETTINGS"):
             default_settings = GlobalSettings(
@@ -167,6 +173,7 @@ def create_app() -> FastAPI:
     async def shutdown_event():
         logger.info("Shutting down HiveBot...")
         await manager.disconnect_all()
+        await vector_service.close()
 
     async def listen_for_owner_reports():
         pubsub = redis_service.client.pubsub()

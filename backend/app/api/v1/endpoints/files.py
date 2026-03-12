@@ -7,6 +7,8 @@ from fastapi import APIRouter, UploadFile, File, HTTPException, Depends, status
 from fastapi.responses import FileResponse
 from ....services.agent_manager import AgentManager
 from ....services.docker_service import DockerService
+from ....services.embedding_client import trigger_file_embedding
+from ....services.vector_service import vector_service
 from ....models.types import FileEntry, AgentUpdate
 from ....core.config import settings
 
@@ -17,10 +19,8 @@ async def get_agent_manager():
     return AgentManager(docker_service)
 
 def validate_filename(filename: str) -> str:
-    """Prevent path traversal and ensure safe filename."""
     if ".." in filename or "/" in filename or "\\" in filename:
         raise HTTPException(status_code=400, detail="Invalid filename")
-    # Optionally, you could sanitize further
     return filename
 
 @router.post("/agents/{agent_id}/files")
@@ -44,7 +44,6 @@ async def upload_agent_file(
             detail=f"File too large. Max size: {settings.MAX_UPLOAD_SIZE} bytes"
         )
     
-    # Validate filename
     safe_filename = validate_filename(file.filename)
     
     agent_dir = settings.AGENTS_DIR / agent_id
@@ -70,7 +69,11 @@ async def upload_agent_file(
     agent.local_files.append(file_entry)
     update = AgentUpdate(local_files=agent.local_files)
     await manager.update_agent(agent_id, update)
-    
+
+    # --- Trigger embedding for text files ---
+    if file_entry.type in ['md', 'txt', 'json']:
+        await trigger_file_embedding(str(file_path), agent.hive_id, file_entry.id, agent_id)
+
     return file_entry
 
 @router.get("/agents/{agent_id}/files", response_model=List[FileEntry])
@@ -126,5 +129,8 @@ async def delete_agent_file(
     agent.local_files = [f for f in agent.local_files if f.id != file_id]
     update = AgentUpdate(local_files=agent.local_files)
     await manager.update_agent(agent_id, update)
-    
+
+    # --- Delete vectors associated with this file ---
+    await vector_service.delete_by_file(file_id)
+
     return {"status": "deleted"}

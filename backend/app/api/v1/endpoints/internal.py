@@ -1,18 +1,26 @@
 from fastapi import APIRouter, HTTPException, Depends, Header
 from pydantic import BaseModel
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from ....services.litellm_service import generate_with_messages
 from ....services.redis_service import redis_service
 from ....services.agent_manager import AgentManager
 from ....services.docker_service import DockerService
+from ....services.vector_service import vector_service
+from ....services.embedding_client import trigger_message_embedding
 from ....core.config import settings
-from ....models.types import ConversationMessage
+from ....models.types import ConversationMessage, HiveMindAccessLevel
 from datetime import datetime
 import secrets
 import logging
+import os
+from qdrant_client.http import models
+from sentence_transformers import SentenceTransformer
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/ai")
+
+# Load embedding model once (can be reused)
+embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
 
 class GenerateDeltaRequest(BaseModel):
     agent_id: str
@@ -63,9 +71,62 @@ async def ai_generate_delta(
         logger.error(f"Failed to get agent {agent_id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to retrieve agent configuration")
 
-    global_user_md = settings.secrets.get("USER_MD", "")
+    # Get hive_id for this agent
+    from ....services.hive_manager import HiveManager
+    hive_manager = HiveManager(agent_manager)
+    hives = await hive_manager.list_hives()
+    agent_hive = None
+    for hive in hives:
+        if agent.id in [a.id for a in hive.agents]:
+            agent_hive = hive
+            break
+    if not agent_hive:
+        raise HTTPException(status_code=404, detail="Agent not associated with any hive")
 
-    # Build sub-agents list with full identity and soul
+    hive_id = agent_hive.id
+    hive_config = agent_hive.hive_mind_config
+
+    # --- RAG: retrieve relevant context ---
+    query_vector = embedding_model.encode(user_input).tolist()
+
+    # Determine which hive_ids to search
+    search_hive_ids = [hive_id]
+    if hive_config.accessLevel == HiveMindAccessLevel.SHARED:
+        search_hive_ids.extend(hive_config.sharedHiveIds)
+    elif hive_config.accessLevel == HiveMindAccessLevel.GLOBAL:
+        # Get all hive ids
+        search_hive_ids = [h.id for h in hives]
+
+    # Build filter: must match hive_id in the list
+    filter_condition = models.Filter(
+        must=[
+            models.FieldCondition(
+                key="hive_id",
+                match=models.MatchAny(any=search_hive_ids)
+            )
+        ]
+    )
+
+    # Search vector DB
+    retrieved = await vector_service.search(query_vector, filter_condition, limit=5)
+
+    # Format retrieved context
+    context_blocks = []
+    for item in retrieved:
+        source = item.get("source", "unknown")
+        text = item.get("text", "")
+        if source == "message":
+            context_blocks.append(f"Previous conversation: {text}")
+        elif source == "file":
+            context_blocks.append(f"File excerpt: {text}")
+        else:
+            context_blocks.append(text)
+
+    context_str = "\n\n".join(context_blocks) if context_blocks else ""
+
+    global_user_md = agent_hive.global_user_md
+
+    # Build sub-agents list
     sub_agents_info = []
     if agent.sub_agent_ids:
         for sub_id in agent.sub_agent_ids:
@@ -73,9 +134,6 @@ async def ai_generate_delta(
             if sub_agent:
                 identity_full = sub_agent.identity_md.strip()
                 soul_full = sub_agent.soul_md.strip()
-                # Optionally truncate to avoid huge prompts (uncomment if needed)
-                # if len(identity_full) > 500: identity_full = identity_full[:500] + "..."
-                # if len(soul_full) > 500: soul_full = soul_full[:500] + "..."
                 sub_agents_info.append(
                     f"- ID: {sub_agent.id}, Name: {sub_agent.name}, Role: {sub_agent.role}\n"
                     f"  Identity:\n{identity_full}\n"
@@ -86,7 +144,6 @@ async def ai_generate_delta(
     else:
         sub_agents_text = "CURRENT SUB-AGENTS: None."
 
-    # Add inter‑agent communication instruction
     communication_instruction = (
         "IMPORTANT: If a user asks you to pass a message to another agent (e.g., 'Give this code to CoS'), "
         "you should forward the message to that agent. Use the following method:\n"
@@ -106,8 +163,11 @@ SOUL (MANDATORY):
 TOOLS (MANDATORY):
 {agent.tools_md}
 
-USER CONTEXT (MANDATORY):
+HIVE CONTEXT (MANDATORY):
 {global_user_md}
+
+RELEVANT RETRIEVED KNOWLEDGE:
+{context_str}
 
 {sub_agents_text}
 
@@ -121,7 +181,7 @@ IMPORTANT: You are NOT a generic AI assistant. You are the entity described abov
         messages.append({"role": msg.role, "content": msg.content})
     messages.append({"role": "user", "content": user_input})
 
-    logger.info(f"System message for agent {agent_id}: {system_content}")
+    logger.info(f"System message for agent {agent_id}: {system_content[:200]}...")
 
     try:
         response = await generate_with_messages(messages, config)
@@ -137,5 +197,8 @@ IMPORTANT: You are NOT a generic AI assistant. You are the entity described abov
     await redis_service.push_conversation_message(agent_id, assistant_msg)
 
     await redis_service.trim_conversation(agent_id, keep_last=100)
+
+    # --- Trigger embedding for the new assistant message ---
+    await trigger_message_embedding(agent_id, hive_id, response, datetime.utcnow().isoformat())
 
     return GenerateResponse(response=response)

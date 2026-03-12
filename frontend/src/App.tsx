@@ -6,7 +6,7 @@ import { Sidebar } from './components/Sidebar';
 import { AgentGrid } from './components/AgentGrid';
 import { AgentDetails } from './components/AgentDetails';
 import { GlobalStats } from './components/GlobalStats';
-import { GlobalFiles } from './components/GlobalFiles';
+import { HiveFiles } from './components/HiveFiles';
 import { AIProviderConfig } from './components/AIProviderConfig';
 import { PublicUrlConfig } from './components/PublicUrlConfig';
 import { BridgeManager } from './components/BridgeManager';
@@ -15,6 +15,7 @@ import { HiveBrain } from './components/HiveBrain';
 import { HiveMindDashboard } from './components/HiveMindDashboard';
 import { GlobalConfig } from './components/GlobalConfig';
 import { HiveTeam } from './components/HiveTeam';
+import { HiveContext } from './components/HiveContext';
 import { LoginPage } from './components/LoginPage';
 import { UnauthorizedPage } from './components/UnauthorizedPage';
 import { ChangePasswordModal } from './components/ChangePasswordModal';
@@ -43,7 +44,7 @@ const AppContent: React.FC = () => {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [creatingBotId, setCreatingBotId] = useState<string | null>(null);
   
-  // NEW: active agents for the current hive
+  // Active agents for the current hive
   const [activeAgents, setActiveAgents] = useState<Agent[]>([]);
   
   const [globalSettings, setGlobalSettings] = useState<GlobalSettings>({
@@ -51,7 +52,10 @@ const AppContent: React.FC = () => {
     sessionTimeout: 30,
     systemName: 'HiveBot Orchestrator',
     maintenanceMode: false,
-    defaultAgentUid: '10001'
+    defaultAgentUid: '10001',
+    rateLimitEnabled: true,
+    rateLimitRequests: 100,
+    rateLimitPeriodSeconds: 60
   });
 
   const [view, setView] = useState<'dashboard' | 'cluster' | 'agent' | 'context' | 'brain' | 'plan' | 'global-config' | 'team'>('dashboard');
@@ -94,29 +98,32 @@ const AppContent: React.FC = () => {
       try {
         setLoadError(null);
         
-        try {
-          const settings = await orchestratorService.getGlobalSettings();
-          setGlobalSettings(settings);
-        } catch (err) {
-          console.warn('Could not fetch global settings, using defaults', err);
-        }
+        // Run independent requests in parallel
+        const promises: Promise<any>[] = [
+          orchestratorService.getGlobalSettings().catch(err => {
+            console.warn('Could not fetch global settings, using defaults', err);
+            return null;
+          }),
+          user.role === 'GLOBAL_ADMIN'
+            ? orchestratorService.listUsers().catch(err => {
+                console.warn('Could not fetch users', err);
+                return [];
+              })
+            : Promise.resolve([]),
+          orchestratorService.listHives().catch(err => {
+            console.warn('Could not fetch hives, will create default', err);
+            return [];
+          })
+        ];
 
-        if (user.role === 'GLOBAL_ADMIN') {
-          try {
-            const usersData = await orchestratorService.listUsers();
-            setUsers(usersData);
-          } catch (err) {
-            console.warn('Could not fetch users', err);
-          }
-        }
+        const [settingsResult, usersResult, hivesResult] = await Promise.all(promises);
 
-        let hivesData: Hive[] = [];
-        try {
-          hivesData = await orchestratorService.listHives();
-        } catch (err) {
-          console.warn('Could not fetch hives, will create default', err);
-        }
+        if (settingsResult) setGlobalSettings(settingsResult);
+        if (usersResult) setUsers(usersResult);
+
+        let hivesData = hivesResult as Hive[];
         
+        // If no hives, create a default one
         if (hivesData.length === 0) {
           try {
             const defaultHive = await orchestratorService.createHive({
@@ -142,6 +149,7 @@ const AppContent: React.FC = () => {
           setActiveHiveId(hivesData[0].id);
         }
 
+        // Refresh providers in the background (non‑critical)
         refreshProviders().catch(err => 
           console.warn('Could not load providers', err)
         );
@@ -157,7 +165,7 @@ const AppContent: React.FC = () => {
     loadInitialData();
   }, [user, refreshProviders]);
 
-  // NEW: Fetch active agents when hive changes
+  // Fetch active agents when hive changes
   useEffect(() => {
     if (activeHiveId) {
       orchestratorService.getHiveActiveAgents(activeHiveId)
@@ -216,7 +224,7 @@ const AppContent: React.FC = () => {
     hives.find(h => h.id === activeHiveId) || hives[0]
   , [hives, activeHiveId]);
 
-  const hiveAgents = activeHive?.agents || []; // still available but will be empty after migration
+  const hiveAgents = activeHive?.agents || [];
   const globalUserMd = activeHive?.globalUserMd || INITIAL_USER_MD;
   const messages = activeHive?.messages || [];
   const globalFiles = activeHive?.globalFiles || [];
@@ -245,7 +253,6 @@ const AppContent: React.FC = () => {
           ? { ...h, agents: h.agents.map(a => a.id === updated.id ? result : a) }
           : h
       ));
-      // Also update activeAgents if present
       setActiveAgents(prev => prev.map(a => a.id === updated.id ? result : a));
     } catch (err) {
       console.error('Update failed', err);
@@ -567,7 +574,7 @@ const AppContent: React.FC = () => {
         
         <div className={`fixed lg:relative inset-y-0 left-0 z-50 transform transition-transform duration-300 lg:translate-x-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
           <Sidebar 
-            agents={activeAgents}          // pass active agents to sidebar
+            agents={activeAgents}
             hives={hives}
             activeHiveId={activeHiveId || ''}
             onSelectHive={handleSelectHive}
@@ -586,7 +593,7 @@ const AppContent: React.FC = () => {
         </div>
 
         <main className="flex-1 flex flex-col overflow-hidden relative">
-          {/* Header - only show when not in global-config? */}
+          {/* Header - only show when not in global-config */}
           {view !== 'global-config' && ['dashboard', 'cluster', 'agent', 'context', 'brain', 'plan', 'team'].includes(view) && (
             <header className="h-16 border-b border-zinc-800 flex items-center justify-between px-4 md:px-8 bg-zinc-950/90 backdrop-blur-md sticky top-0 z-20">
               <div className="flex items-center gap-3 md:gap-4">
@@ -684,7 +691,7 @@ const AppContent: React.FC = () => {
                 hive={activeHive} 
                 onNavigateToNodes={() => setView('cluster')} 
                 onRunAgent={runAgent}
-                agents={hiveAgents}   // use hive agents for dashboard (may be empty after migration)
+                agents={hiveAgents}
               />
             )}
 
@@ -710,82 +717,10 @@ const AppContent: React.FC = () => {
             )}
 
             {view === 'context' && activeHive && (
-              <div className="max-w-5xl mx-auto space-y-8 pb-20 animate-in fade-in duration-700">
-                <div className="space-y-2">
-                  <h2 className="text-3xl md:text-4xl font-black tracking-tighter text-emerald-500">Hive Context</h2>
-                  <p className="text-zinc-500 text-sm md:text-base">USER.md definitions and shared assets inherited by all hive entities.</p>
-                </div>
-                
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                  <section className="lg:col-span-2 bg-zinc-900 rounded-3xl border border-zinc-800 p-4 md:p-8 shadow-2xl">
-                    <div className="flex items-center justify-between mb-4 px-2">
-                      <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">USER.md Configuration</span>
-                    </div>
-                    <textarea 
-                      value={globalUserMd} 
-                      onChange={async (e) => {
-                        await updateHive(activeHive.id, { globalUserMd: e.target.value });
-                      }}
-                      className="w-full h-[400px] md:h-[500px] bg-transparent text-zinc-300 font-mono text-sm resize-none focus:outline-none border border-zinc-800/50 rounded-2xl p-4 md:p-6 shadow-inner" 
-                      spellCheck={false} 
-                    />
-                  </section>
-
-                  <section className="bg-zinc-900 rounded-3xl border border-zinc-800 p-6 shadow-2xl flex flex-col">
-                    <div className="flex items-center justify-between mb-6">
-                      <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Shared Assets</span>
-                      <button 
-                        onClick={async () => {
-                          const name = prompt('File name:');
-                          if (name) {
-                            const newFile: FileEntry = {
-                              id: Math.random().toString(36).substr(2, 9),
-                              name,
-                              content: '',
-                              size: 0,
-                              type: 'md',
-                              uploadedAt: new Date().toISOString()
-                            };
-                            await orchestratorService.addGlobalFileToHive(activeHive.id, newFile);
-                            setHives(prev => prev.map(h => 
-                              h.id === activeHive.id 
-                                ? { ...h, globalFiles: [...h.globalFiles, newFile] }
-                                : h
-                            ));
-                          }
-                        }}
-                        className="p-2 bg-emerald-500/10 text-emerald-500 rounded-lg hover:bg-emerald-500/20 transition-colors"
-                      >
-                        <Icons.Plus />
-                      </button>
-                    </div>
-                    <div className="flex-1 space-y-2 overflow-y-auto">
-                      {globalFiles.length === 0 && <p className="text-zinc-600 text-xs italic text-center py-10">No shared files in this hive.</p>}
-                      {globalFiles.map(file => (
-                        <div key={file.id} className="group flex items-center justify-between p-3 bg-zinc-950 border border-zinc-800 rounded-xl hover:border-emerald-500/30 transition-all">
-                          <div className="flex items-center gap-3 overflow-hidden">
-                            <Icons.File />
-                            <span className="text-xs font-bold text-zinc-400 truncate">{file.name}</span>
-                          </div>
-                          <button 
-                            onClick={async () => {
-                              await orchestratorService.removeGlobalFileFromHive(activeHive.id, file.id);
-                              setHives(prev => prev.map(h => 
-                                h.id === activeHive.id 
-                                  ? { ...h, globalFiles: h.globalFiles.filter(f => f.id !== file.id) }
-                                  : h
-                              ));
-                            }}
-                            className="p-1.5 text-zinc-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all"
-                          >
-                            <Icons.Trash />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  </section>
-                </div>
-              </div>
+              <HiveContext
+                hive={activeHive}
+                onUpdateHive={updateHive}
+              />
             )}
 
             {view === 'agent' && (

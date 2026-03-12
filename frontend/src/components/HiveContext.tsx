@@ -45,14 +45,14 @@ export const HiveContext: React.FC<HiveContextProps> = ({ hive, onUpdateHive }) 
     <div className="max-w-5xl mx-auto space-y-8 pb-20 animate-in fade-in duration-700">
       <div className="space-y-2">
         <h2 className="text-3xl md:text-4xl font-black tracking-tighter text-emerald-500">Hive Context</h2>
-        <p className="text-zinc-500 text-sm md:text-base">USER.md definitions and shared assets inherited by all hive entities.</p>
+        <p className="text-zinc-500 text-sm md:text-base">HIVE.md definitions and hive files inherited by all hive entities.</p>
       </div>
       
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* USER.md Section - From Monohive */}
+        {/* HIVE.md Section */}
         <section className="lg:col-span-2 bg-zinc-900 rounded-3xl border border-zinc-800 p-4 md:p-8 shadow-2xl">
           <div className="flex items-center justify-between mb-4 px-2">
-            <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">USER.md Configuration</span>
+            <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">HIVE.md Configuration</span>
           </div>
           <textarea 
             value={hive.globalUserMd} 
@@ -62,10 +62,10 @@ export const HiveContext: React.FC<HiveContextProps> = ({ hive, onUpdateHive }) 
           />
         </section>
 
-        {/* Shared Assets Section - From Monohive */}
+        {/* Hive Files Section */}
         <section className="bg-zinc-900 rounded-3xl border border-zinc-800 p-6 shadow-2xl flex flex-col">
           <div className="flex items-center justify-between mb-6">
-            <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Shared Assets</span>
+            <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Hive Files</span>
             <button 
               onClick={handleAddFile}
               disabled={isUploading}
@@ -83,7 +83,7 @@ export const HiveContext: React.FC<HiveContextProps> = ({ hive, onUpdateHive }) 
           </div>
           <div className="flex-1 space-y-2 overflow-y-auto">
             {hive.globalFiles.length === 0 && (
-              <p className="text-zinc-600 text-xs italic text-center py-10">No shared files in this hive.</p>
+              <p className="text-zinc-600 text-xs italic text-center py-10">No hive files.</p>
             )}
             {hive.globalFiles.map(file => (
               <div key={file.id} className="group flex items-center justify-between p-3 bg-zinc-950 border border-zinc-800 rounded-xl hover:border-emerald-500/30 transition-all">

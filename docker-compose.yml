@@ -40,6 +40,20 @@ services:
       timeout: 5s
       retries: 5
 
+  qdrant:
+    image: qdrant/qdrant:v1.7.4
+    container_name: hivebot_qdrant
+    restart: unless-stopped
+    volumes:
+      - qdrant_data:/qdrant/storage
+    environment:
+      QDRANT__SERVICE__HTTP_PORT: 6333
+    networks:
+      - hivebot_network
+    ports:
+      - "6333:6333"
+    # No healthcheck – backend will retry connection
+
   backend:
     build:
       context: .
@@ -53,6 +67,8 @@ services:
         condition: service_healthy
       postgres:
         condition: service_healthy
+      qdrant:
+        condition: service_started
     environment:
       - ENVIRONMENT=production
       - REDIS_HOST=redis
@@ -64,6 +80,8 @@ services:
       - DOCKER_NETWORK=hivebot_network
       - SCHEDULER_ENABLED=true
       - SCHEDULER_AUTO_ASSIGN=true
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./agents:/app/data/agents
@@ -75,12 +93,7 @@ services:
       - hivebot_network
     ports:
       - "8000:8000"
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
+    # Healthcheck is defined inside the Dockerfile
 
   worker:
     build:
@@ -94,7 +107,7 @@ services:
       postgres:
         condition: service_healthy
       backend:
-        condition: service_healthy
+        condition: service_started
     environment:
       - REDIS_HOST=redis
       - POSTGRES_HOST=postgres
@@ -110,6 +123,32 @@ services:
       - hivebot_network
     deploy:
       replicas: 2
+
+  embedding-worker:
+    build:
+      context: .
+      dockerfile: docker/embedding-worker.Dockerfile
+    image: hivebot/embedding-worker:latest
+    container_name: hivebot_embedding_worker
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY}
+      - ORCHESTRATOR_URL=http://backend:8000
+      - EMBEDDING_MODEL=all-MiniLM-L6-v2
+      - EMBEDDING_DIM=384
+    volumes:
+      - ./agents:/app/data/agents
+    networks:
+      - hivebot_network
 
   simulator:
     build:
@@ -141,7 +180,7 @@ services:
       postgres:
         condition: service_healthy
       backend:
-        condition: service_healthy
+        condition: service_started
     environment:
       - REDIS_HOST=redis
       - POSTGRES_HOST=postgres
@@ -167,7 +206,7 @@ services:
       postgres:
         condition: service_healthy
       backend:
-        condition: service_healthy
+        condition: service_started
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
@@ -188,7 +227,7 @@ services:
     restart: unless-stopped
     depends_on:
       backend:
-        condition: service_healthy
+        condition: service_started
     networks:
       - hivebot_network
     ports:
@@ -325,6 +364,7 @@ networks:
 volumes:
   redis_data:
   postgres_data:
+  qdrant_data:
   hivebot_secrets:
     driver: local
     driver_opts:

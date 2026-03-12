@@ -390,7 +390,7 @@ export const AgentDetails: React.FC<AgentDetailsProps> = ({ agent, onUpdate, onR
       <div className="flex gap-2 p-1 bg-zinc-900 rounded-2xl border border-zinc-800 w-fit overflow-x-auto max-w-full">
         {(['soul', 'identity', 'tools', 'files', 'channels', 'config', 'logs', 'subagents', 'skills'] as const).map(tab => (
           <button key={tab} onClick={() => setActiveTab(tab)} className={`px-4 py-2 text-[10px] font-black uppercase tracking-widest transition-all rounded-xl whitespace-nowrap ${activeTab === tab ? 'bg-zinc-800 text-emerald-400 shadow-lg' : 'text-zinc-500 hover:text-zinc-300'}`}>
-            {tab === 'soul' ? 'Soul.md' : tab === 'identity' ? 'Identity.md' : tab === 'tools' ? 'Tools.md' : tab === 'subagents' ? 'Sub‑Bots' : tab}
+            {tab === 'files' ? 'Bot Files' : tab === 'soul' ? 'Soul.md' : tab === 'identity' ? 'Identity.md' : tab === 'tools' ? 'Tools.md' : tab === 'subagents' ? 'Sub‑Bots' : tab}
           </button>
         ))}
       </div>
@@ -716,7 +716,7 @@ export const AgentDetails: React.FC<AgentDetailsProps> = ({ agent, onUpdate, onR
             </div>
           )}
 
-          {/* Files Tab (unchanged) */}
+          {/* Bot Files Tab (renamed) */}
           {activeTab === 'files' && (
             <div className="grid grid-cols-1 md:grid-cols-4 gap-6 h-[600px] animate-in fade-in duration-300">
               <div className="md:col-span-1 bg-zinc-900 rounded-3xl border border-zinc-800 p-4 space-y-6 flex flex-col overflow-hidden">
@@ -818,7 +818,7 @@ export const AgentDetails: React.FC<AgentDetailsProps> = ({ agent, onUpdate, onR
             </div>
           )}
 
-          {/* Sub-Bots Tab (unchanged) */}
+          {/* Sub‑Bots Tab (unchanged) */}
           {activeTab === 'subagents' && (
             <div className="bg-zinc-900 rounded-3xl border border-zinc-800 p-6 shadow-2xl">
               <h3 className="text-xs font-black uppercase tracking-widest text-emerald-500 mb-4">Sub‑Bots</h3>
@@ -863,7 +863,7 @@ export const AgentDetails: React.FC<AgentDetailsProps> = ({ agent, onUpdate, onR
             </div>
           )}
 
-          {/* Skills Tab (new) */}
+          {/* Skills Tab (unchanged) */}
           {activeTab === 'skills' && (
             <div className="space-y-6">
               <div className="flex justify-between items-center">

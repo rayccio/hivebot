@@ -7,13 +7,14 @@ from fastapi import APIRouter, UploadFile, File, HTTPException, status
 from fastapi.responses import FileResponse
 from ....core.config import settings
 from ....models.types import FileEntry
+from ....services.embedding_client import trigger_file_embedding
+from ....services.vector_service import vector_service
 
 router = APIRouter(tags=["global-files"])
 
-GLOBAL_FILES_DIR = settings.GLOBAL_FILES_DIR
+GLOBAL_FILES_DIR = settings.GLOBAL_FILES_DIR  # still called GLOBAL_FILES_DIR, but will be system‑wide
 
 def validate_filename(filename: str) -> str:
-    """Prevent path traversal and ensure safe filename."""
     if ".." in filename or "/" in filename or "\\" in filename:
         raise HTTPException(status_code=400, detail="Invalid filename")
     return filename
@@ -21,7 +22,6 @@ def validate_filename(filename: str) -> str:
 @router.post("")
 async def upload_global_file(file: UploadFile = File(...)):
     """Upload a global file accessible to all agents."""
-    # Validate file size
     file.file.seek(0, os.SEEK_END)
     file_size = file.file.tell()
     file.file.seek(0)
@@ -47,11 +47,15 @@ async def upload_global_file(file: UploadFile = File(...)):
         size=os.path.getsize(file_path),
         uploaded_at=datetime.utcnow().isoformat()
     )
+
+    # --- Trigger embedding for text files, using hive_id "global" ---
+    if file_entry.type in ['md', 'txt', 'json']:
+        await trigger_file_embedding(str(file_path), "global", file_entry.id)
+
     return file_entry
 
 @router.get("", response_model=List[FileEntry])
 async def list_global_files():
-    """List all global files."""
     files = []
     for filename in os.listdir(GLOBAL_FILES_DIR):
         file_path = GLOBAL_FILES_DIR / filename
@@ -68,7 +72,6 @@ async def list_global_files():
 
 @router.get("/{filename}")
 async def download_global_file(filename: str):
-    """Download a global file."""
     safe_filename = validate_filename(filename)
     file_path = GLOBAL_FILES_DIR / safe_filename
     if not file_path.exists():
@@ -77,10 +80,11 @@ async def download_global_file(filename: str):
 
 @router.delete("/{filename}")
 async def delete_global_file(filename: str):
-    """Delete a global file."""
     safe_filename = validate_filename(filename)
     file_path = GLOBAL_FILES_DIR / safe_filename
     if file_path.exists():
         file_path.unlink()
+        # Delete vectors – we need to know file_id; we used filename as id
+        await vector_service.delete_by_file(filename)
         return {"status": "deleted"}
     raise HTTPException(status_code=404, detail="File not found")

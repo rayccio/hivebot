@@ -13,3 +13,8 @@ python-jose[cryptography]==3.3.0
 passlib==1.7.4
 asyncpg==0.30.0
 sqlalchemy==2.0.40
+qdrant-client==1.7.3
+sentence-transformers==2.2.2
+numpy<2               # <-- PIN ADDED
+torch==2.1.2
+huggingface-hub==0.18.0
