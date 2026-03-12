@@ -45,11 +45,12 @@ async def test_create_plan_with_scheduler_enabled():
                     agent_manager=mock_agent_manager
                 )
 
+                # Verify zadd was called once with correct key and member
                 mock_zadd.assert_awaited_once()
                 args = mock_zadd.call_args[0]
-                assert args[0] == "tasks:pending"
-                assert isinstance(list(args[1].keys())[0], str)
-                assert isinstance(list(args[1].values())[0], float)
+                assert args[0] == "tasks:pending"      # key
+                assert isinstance(args[1], str)        # member (task id)
+                assert isinstance(args[2], float)      # score
 
 @pytest.mark.asyncio
 async def test_create_plan_with_scheduler_disabled():
