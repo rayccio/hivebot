@@ -1,3 +1,4 @@
+import os
 import pytest
 import asyncio
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
@@ -7,10 +8,16 @@ from httpx import AsyncClient
 from typing import AsyncGenerator, Generator
 from unittest.mock import AsyncMock, patch
 
+# Set HIVEBOT_DATA to a writable temp directory before importing app modules
+os.environ['HIVEBOT_DATA'] = '/tmp/hivebot_test'
+
 from app.core.database import Base, get_db
 from app.main import app
 from app.core.config import settings
 from app.services.redis_service import redis_service
+
+# Ensure the temp directory exists
+os.makedirs('/tmp/hivebot_test', exist_ok=True)
 
 # Use a separate test database
 TEST_DATABASE_URL = "postgresql+asyncpg://hivebot:hivebot@localhost/hivebot_test"
