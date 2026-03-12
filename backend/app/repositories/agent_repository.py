@@ -11,11 +11,13 @@ class AgentRepository:
 
     async def create(self, agent: Agent) -> Agent:
         data = prepare_json_data(agent.dict(by_alias=True))
+        # agent.status might be an enum or a string; handle both
+        status_value = agent.status.value if hasattr(agent.status, 'value') else agent.status
         db_agent = AgentModel(
             id=agent.id,
             data=data,
             container_id=agent.container_id,
-            status=agent.status.value
+            status=status_value
         )
         self.db.add(db_agent)
         await self.db.commit()
@@ -44,10 +46,11 @@ class AgentRepository:
             if hasattr(agent, k):
                 setattr(agent, k, v)
         data = prepare_json_data(agent.dict(by_alias=True))
+        status_value = agent.status.value if hasattr(agent.status, 'value') else agent.status
         await self.db.execute(
             update(AgentModel)
             .where(AgentModel.id == agent_id)
-            .values(data=data, status=agent.status.value)
+            .values(data=data, status=status_value)
         )
         await self.db.commit()
         return agent
