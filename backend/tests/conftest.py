@@ -3,6 +3,7 @@ import pytest
 import asyncio
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import NullPool
 from httpx import AsyncClient, ASGITransport
 from typing import AsyncGenerator, Generator
 from unittest.mock import AsyncMock, patch
@@ -19,7 +20,7 @@ from app.services.redis_service import redis_service
 # Ensure the temp directory exists
 os.makedirs('/tmp/hivebot_test', exist_ok=True)
 
-# Use a separate test database
+# Use a separate test database with NullPool to avoid connection reuse
 TEST_DATABASE_URL = "postgresql+asyncpg://hivebot:hivebot@localhost/hivebot_test"
 
 @pytest.fixture(scope="function")
@@ -30,7 +31,7 @@ def event_loop() -> Generator:
 
 @pytest.fixture(scope="session")
 async def engine():
-    engine = create_async_engine(TEST_DATABASE_URL, echo=False)
+    engine = create_async_engine(TEST_DATABASE_URL, echo=False, poolclass=NullPool)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
@@ -53,20 +54,22 @@ async def client(session) -> AsyncGenerator:
 
     app.dependency_overrides[get_db] = override_get_db
 
-    # Mock Redis to avoid needing a real Redis instance in tests
-    redis_mock = AsyncMock()
-    redis_mock.ping = AsyncMock(return_value=True)
-    redis_mock.publish = AsyncMock()
-    redis_mock.get = AsyncMock(return_value=None)
-    redis_mock.set = AsyncMock()
-    redis_mock.delete = AsyncMock()
-    redis_mock.client = redis_mock  # for direct attribute access
+    # Patch settings.secrets.get to return test internal key
+    with patch.object(settings.secrets, 'get', side_effect=lambda key, default=None: 'test-internal-key' if key == 'INTERNAL_API_KEY' else default):
+        # Mock Redis to avoid needing a real Redis instance in tests
+        redis_mock = AsyncMock()
+        redis_mock.ping = AsyncMock(return_value=True)
+        redis_mock.publish = AsyncMock()
+        redis_mock.get = AsyncMock(return_value=None)
+        redis_mock.set = AsyncMock()
+        redis_mock.delete = AsyncMock()
+        redis_mock.client = redis_mock  # for direct attribute access
 
-    # Patch the redis_service.client
-    with patch.object(redis_service, 'client', redis_mock):
-        # Use ASGITransport to mount the FastAPI app
-        transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as ac:
-            yield ac
+        # Patch the redis_service.client
+        with patch.object(redis_service, 'client', redis_mock):
+            # Use ASGITransport to mount the FastAPI app
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as ac:
+                yield ac
 
     app.dependency_overrides.clear()

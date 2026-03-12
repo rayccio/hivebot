@@ -33,9 +33,7 @@ class TaskManager:
         )
         repo, session = await self._get_repo()
         try:
-            # Store graph as a special task? For simplicity, we'll store graph in a separate table later.
-            # For now, we'll store each task individually, and we can reconstruct the graph from tasks with same goal_id.
-            # So we don't store the graph object itself.
+            # Store each task individually
             for task in tasks:
                 await repo.create(task)
         finally:
@@ -79,7 +77,7 @@ class TaskManager:
             for k, v in updates.items():
                 if hasattr(task, k):
                     setattr(task, k, v)
-            await repo.update(task_id, task.dict(by_alias=True))
+            await repo.update(task_id, task.model_dump(by_alias=True))
             return task
         finally:
             await session.close()
