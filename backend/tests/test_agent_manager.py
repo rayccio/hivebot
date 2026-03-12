@@ -22,6 +22,5 @@ async def test_create_agent(session):
     assert agent.id.startswith("b-")
     assert agent.name == "Test Agent"
 
-    # Clean up
-    with patch.object(redis_service, 'client', Mock()):  # avoid Redis calls
-        await agent_manager.delete_agent(agent.id)
+    # Clean up – no extra patch needed; redis_service.client is already an AsyncMock
+    await agent_manager.delete_agent(agent.id)
