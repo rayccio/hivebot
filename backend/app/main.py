@@ -129,10 +129,13 @@ def create_app() -> FastAPI:
                 session_timeout=30,
                 system_name="HiveBot Orchestrator",
                 maintenance_mode=False,
-                default_agent_uid="10001"
+                default_agent_uid="10001",
+                rate_limit_enabled=True,
+                rate_limit_requests=100,
+                rate_limit_period_seconds=60
             )
             settings.secrets.set("GLOBAL_SETTINGS", default_settings.dict())
-            logger.info("Initialized global settings with gateway disabled")
+            logger.info("Initialized global settings with gateway disabled and rate limiting enabled")
 
         # Create default admin if no users exist
         try:

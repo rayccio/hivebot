@@ -171,7 +171,7 @@ export interface GlobalSettings {
   systemName: string;
   maintenanceMode: boolean;
   defaultAgentUid: string;
-  // Rate limiting
+  // Rate limiting – enabled by default
   rateLimitEnabled: boolean;
   rateLimitRequests: number;
   rateLimitPeriodSeconds: number;

@@ -290,7 +290,7 @@ class GlobalSettings(BaseModel):
     system_name: str = "HiveBot Orchestrator"
     maintenance_mode: bool = False
     default_agent_uid: str = "10001"
-    # Rate limiting
+    # Rate limiting – enabled by default with reasonable limits
     rate_limit_enabled: bool = True
-    rate_limit_requests: int = 50          # requests per period
-    rate_limit_period_seconds: int = 60    # period in seconds
+    rate_limit_requests: int = 100          # 100 requests per period
+    rate_limit_period_seconds: int = 60      # per 60 seconds (i.e., 1.67 req/sec)
