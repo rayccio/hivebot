@@ -1,5 +1,5 @@
 import redis.asyncio as redis
-from typing import Optional, Any, List
+from typing import Optional, Any, List, Set
 from ..core.config import settings
 import json
 import logging
@@ -33,7 +33,6 @@ class RedisService:
         raise ConnectionError("Redis unreachable after multiple attempts")
 
     async def get_client(self):
-        """Return the Redis client (ensure it's connected)."""
         if not self.client:
             await self.connect()
         return self.client
@@ -61,23 +60,57 @@ class RedisService:
         await client.delete(key)
 
     def pubsub(self):
-        # Note: pubsub should be obtained from the client directly
-        # This method assumes client is already connected; if not, it will raise
         if not self.client:
             raise RuntimeError("Redis client not connected. Call connect() first.")
         return self.client.pubsub()
 
     # ----------------------------
-    # Conversation Methods (Delta Updates)
+    # Set operations
+    # ----------------------------
+    async def sadd(self, key: str, member: str) -> int:
+        client = await self.get_client()
+        return await client.sadd(key, member)
+
+    async def srem(self, key: str, member: str) -> int:
+        client = await self.get_client()
+        return await client.srem(key, member)
+
+    async def smembers(self, key: str) -> Set[str]:
+        client = await self.get_client()
+        return await client.smembers(key)
+
+    async def sismember(self, key: str, member: str) -> bool:
+        client = await self.get_client()
+        return await client.sismember(key, member)
+
+    # ----------------------------
+    # Sorted set operations
+    # ----------------------------
+    async def zadd(self, key: str, member: str, score: float) -> int:
+        client = await self.get_client()
+        return await client.zadd(key, {member: score})
+
+    async def zrem(self, key: str, member: str) -> int:
+        client = await self.get_client()
+        return await client.zrem(key, member)
+
+    async def zrange(self, key: str, start: int, end: int, withscores: bool = False) -> List:
+        client = await self.get_client()
+        return await client.zrange(key, start, end, withscores=withscores)
+
+    async def zscore(self, key: str, member: str) -> Optional[float]:
+        client = await self.get_client()
+        return await client.zscore(key, member)
+
+    # ----------------------------
+    # Conversation Methods
     # ----------------------------
     async def push_conversation_message(self, agent_id: str, message: ConversationMessage):
-        """Append a message to the agent's conversation list."""
         key = f"conversation:{agent_id}"
         client = await self.get_client()
         await client.rpush(key, message.model_dump_json())
 
     async def get_conversation(self, agent_id: str, limit: int = -1) -> List[ConversationMessage]:
-        """Retrieve all or last N messages from conversation."""
         key = f"conversation:{agent_id}"
         client = await self.get_client()
         if limit > 0:
@@ -98,7 +131,6 @@ class RedisService:
         await client.delete(f"conversation:{agent_id}")
 
     async def trim_conversation(self, agent_id: str, keep_last: int = 50):
-        """Keep only the last `keep_last` messages."""
         key = f"conversation:{agent_id}"
         client = await self.get_client()
         await client.ltrim(key, -keep_last, -1)

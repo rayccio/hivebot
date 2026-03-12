@@ -4,10 +4,8 @@ from unittest.mock import AsyncMock, patch, MagicMock
 from datetime import datetime
 import json
 
-# Assuming the scheduler code is in scheduler.main
-import sys
-sys.path.append('..')
-from scheduler.main import (
+# Correct import: from main (not scheduler.main)
+from main import (
     populate_pending_tasks,
     populate_idle_agents,
     maintenance_loop,
@@ -19,7 +17,6 @@ async def test_populate_pending_tasks():
     mock_pg = AsyncMock()
     mock_redis = AsyncMock()
 
-    # Mock database rows
     mock_pg.acquire.return_value.__aenter__.return_value.fetch = AsyncMock(return_value=[
         {'id': 'task1', 'created_at': datetime(2025, 1, 1, 12, 0, 0)},
         {'id': 'task2', 'created_at': datetime(2025, 1, 1, 12, 5, 0)},
@@ -27,9 +24,7 @@ async def test_populate_pending_tasks():
 
     await populate_pending_tasks(mock_pg, mock_redis)
 
-    # Verify zadd called twice with correct scores
     assert mock_redis.zadd.call_count == 2
-    # First call: task1 score = timestamp * 1000
     mock_redis.zadd.assert_any_call("tasks:pending", {"task1": 1735732800000.0})
     mock_redis.zadd.assert_any_call("tasks:pending", {"task2": 1735733100000.0})
 
@@ -54,19 +49,16 @@ async def test_maintenance_loop_removes_non_pending():
     mock_pg = AsyncMock()
     mock_redis = AsyncMock()
 
-    # Mock Redis returning two task IDs
     mock_redis.zrange = AsyncMock(return_value=["task1", "task2"])
 
-    # Mock DB statuses
     async def mock_fetchval(query, task_id):
         if task_id == "task1":
-            return "assigned"  # not pending
+            return "assigned"
         elif task_id == "task2":
             return "pending"
         return None
     mock_pg.acquire.return_value.__aenter__.return_value.fetchval = mock_fetchval
 
-    # Run maintenance loop once (we'll break after one iteration)
     task = asyncio.create_task(maintenance_loop(mock_pg, mock_redis))
     await asyncio.sleep(0.1)
     task.cancel()
@@ -75,7 +67,6 @@ async def test_maintenance_loop_removes_non_pending():
     except asyncio.CancelledError:
         pass
 
-    # Verify only task1 removed
     mock_redis.zrem.assert_awaited_once_with("tasks:pending", "task1")
 
 @pytest.mark.asyncio
@@ -83,10 +74,8 @@ async def test_assignment_loop_matches_and_assigns():
     mock_pg = AsyncMock()
     mock_redis = AsyncMock()
 
-    # Mock Redis: one pending task
     mock_redis.zrange = AsyncMock(return_value=[("task1", 123456.0)])
 
-    # Mock DB fetch for task
     task_data = {
         'status': 'pending',
         'description': 'Test task',
@@ -103,10 +92,8 @@ async def test_assignment_loop_matches_and_assigns():
         return None
     mock_pg.acquire.return_value.__aenter__.return_value.fetchrow = mock_fetchrow
 
-    # Mock Redis idle agents
     mock_redis.smembers = AsyncMock(return_value={"agent1", "agent2"})
 
-    # Mock DB fetch for agents
     agent1_data = {'skills': [{'skillId': 'skill1'}]}
     agent2_data = {'skills': [{'skillId': 'skill2'}]}
     async def mock_fetch(query, agent_ids):
@@ -116,13 +103,9 @@ async def test_assignment_loop_matches_and_assigns():
         ]
     mock_pg.acquire.return_value.__aenter__.return_value.fetch = mock_fetch
 
-    # Mock DB execute for task and agent updates
     mock_pg.acquire.return_value.__aenter__.return_value.execute = AsyncMock()
-
-    # Mock Redis publish
     mock_redis.publish = AsyncMock()
 
-    # Run assignment loop once
     task = asyncio.create_task(assignment_loop(mock_pg, mock_redis))
     await asyncio.sleep(0.1)
     task.cancel()
@@ -131,16 +114,7 @@ async def test_assignment_loop_matches_and_assigns():
     except asyncio.CancelledError:
         pass
 
-    # Verify task assigned to agent1 (only agent with skill1)
-    # Check task update
-    expected_task_update = task_data.copy()
-    expected_task_update['status'] = 'assigned'
-    expected_task_update['assigned_agent_id'] = 'agent1'
-    expected_task_update['started_at'] = ... # we can't check exact time, but we can check that execute was called with the right task id
-    # Instead, we can check that the execute call contained the task data (without started_at maybe)
-    # For simplicity, we just check that zrem and srem were called
     mock_redis.zrem.assert_awaited_once_with("tasks:pending", "task1")
     mock_redis.srem.assert_awaited_once_with("agents:idle", "agent1")
     mock_redis.publish.assert_awaited_once()
-    # Verify publish called with correct agent channel
     assert mock_redis.publish.call_args[0][0] == "agent:agent1"

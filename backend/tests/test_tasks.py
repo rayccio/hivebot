@@ -10,7 +10,6 @@ async def test_assign_task_removes_from_redis():
     mock_task_manager = AsyncMock()
     mock_agent_manager = AsyncMock()
 
-    # Mock task and agent
     task = Task(
         id="task1",
         hive_id="h-test",
@@ -26,8 +25,11 @@ async def test_assign_task_removes_from_redis():
     mock_agent_manager.get_agent.return_value = agent
     mock_task_manager.assign_task.return_value = True
 
-    mock_redis = AsyncMock()
-    with patch('app.api.v1.endpoints.tasks.redis_service', mock_redis):
+    # Patch the individual redis methods
+    with patch('app.services.redis_service.redis_service.zrem', new_callable=AsyncMock) as mock_zrem, \
+         patch('app.services.redis_service.redis_service.srem', new_callable=AsyncMock) as mock_srem, \
+         patch('app.services.redis_service.redis_service.publish', new_callable=AsyncMock) as mock_publish:
+
         result = await assign_task(
             hive_id="h-test",
             task_id="task1",
@@ -36,11 +38,9 @@ async def test_assign_task_removes_from_redis():
             agent_manager=mock_agent_manager
         )
 
-        # Verify redis zrem called
-        mock_redis.zrem.assert_awaited_once_with("tasks:pending", "task1")
-        mock_redis.srem.assert_awaited_once_with("agents:idle", "agent1")
-        # Verify publish called
-        mock_redis.publish.assert_awaited_once()
+        mock_zrem.assert_awaited_once_with("tasks:pending", "task1")
+        mock_srem.assert_awaited_once_with("agents:idle", "agent1")
+        mock_publish.assert_awaited_once()
 
 @pytest.mark.asyncio
 async def test_assign_task_non_pending_fails():
@@ -61,12 +61,16 @@ async def test_assign_task_non_pending_fails():
     mock_task_manager.get_task.return_value = task
     mock_agent_manager.get_agent.return_value = agent
 
-    with pytest.raises(HTTPException) as excinfo:
-        await assign_task(
-            hive_id="h-test",
-            task_id="task1",
-            agent_id="agent1",
-            task_manager=mock_task_manager,
-            agent_manager=mock_agent_manager
-        )
-    assert excinfo.value.status_code == 400
+    with patch('app.services.redis_service.redis_service.zrem', new_callable=AsyncMock), \
+         patch('app.services.redis_service.redis_service.srem', new_callable=AsyncMock), \
+         patch('app.services.redis_service.redis_service.publish', new_callable=AsyncMock):
+
+        with pytest.raises(HTTPException) as excinfo:
+            await assign_task(
+                hive_id="h-test",
+                task_id="task1",
+                agent_id="agent1",
+                task_manager=mock_task_manager,
+                agent_manager=mock_agent_manager
+            )
+        assert excinfo.value.status_code == 400
