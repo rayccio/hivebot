@@ -17,18 +17,15 @@ async def test_populate_pending_tasks():
     mock_pg = AsyncMock()
     mock_redis = AsyncMock()
 
-    # Create a mock connection that will be returned by the context manager
+    # Create a mock connection that will be the return value of the async context manager
     mock_conn = AsyncMock()
     mock_conn.fetch = AsyncMock(return_value=[
         {'id': 'task1', 'created_at': datetime(2025, 1, 1, 12, 0, 0)},
         {'id': 'task2', 'created_at': datetime(2025, 1, 1, 12, 5, 0)},
     ])
 
-    # Make pg_pool.acquire return an async context manager
-    mock_acquire = AsyncMock()
-    mock_acquire.__aenter__.return_value = mock_conn
-    mock_acquire.__aexit__.return_value = None
-    mock_pg.acquire.return_value = mock_acquire
+    # Make pg_pool.acquire an async function that returns the connection mock
+    mock_pg.acquire = AsyncMock(return_value=mock_conn)
 
     await populate_pending_tasks(mock_pg, mock_redis)
 
@@ -47,10 +44,7 @@ async def test_populate_idle_agents():
         {'id': 'agent2'},
     ])
 
-    mock_acquire = AsyncMock()
-    mock_acquire.__aenter__.return_value = mock_conn
-    mock_acquire.__aexit__.return_value = None
-    mock_pg.acquire.return_value = mock_acquire
+    mock_pg.acquire = AsyncMock(return_value=mock_conn)
 
     await populate_idle_agents(mock_pg, mock_redis)
 
@@ -75,11 +69,9 @@ async def test_maintenance_loop_removes_non_pending():
     mock_conn = AsyncMock()
     mock_conn.fetchval = mock_fetchval
 
-    mock_acquire = AsyncMock()
-    mock_acquire.__aenter__.return_value = mock_conn
-    mock_acquire.__aexit__.return_value = None
-    mock_pg.acquire.return_value = mock_acquire
+    mock_pg.acquire = AsyncMock(return_value=mock_conn)
 
+    # Run the maintenance loop for a short time and cancel it
     task = asyncio.create_task(maintenance_loop(mock_pg, mock_redis))
     await asyncio.sleep(0.1)
     task.cancel()
@@ -129,13 +121,11 @@ async def test_assignment_loop_matches_and_assigns():
     mock_conn.fetch = mock_fetch
     mock_conn.execute = AsyncMock()
 
-    mock_acquire = AsyncMock()
-    mock_acquire.__aenter__.return_value = mock_conn
-    mock_acquire.__aexit__.return_value = None
-    mock_pg.acquire.return_value = mock_acquire
+    mock_pg.acquire = AsyncMock(return_value=mock_conn)
 
     mock_redis.publish = AsyncMock()
 
+    # Run the assignment loop for a short time and cancel it
     task = asyncio.create_task(assignment_loop(mock_pg, mock_redis))
     await asyncio.sleep(0.1)
     task.cancel()
