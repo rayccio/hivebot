@@ -1,12 +1,16 @@
 from fastapi import APIRouter, HTTPException, Depends, Query
 from typing import List, Optional
 from ....services.skill_manager import SkillManager
-from ....models.skill import Skill, SkillCreate, SkillVersion, SkillVersionCreate, SkillType, SkillVisibility
+from ....services.skill_suggestion_manager import SkillSuggestionManager
+from ....models.skill import Skill, SkillCreate, SkillVersion, SkillVersionCreate, SkillType, SkillVisibility, SkillSuggestion, SkillSuggestionCreate
 
 router = APIRouter(prefix="/skills", tags=["skills"])
 
 async def get_skill_manager():
     return SkillManager()
+
+async def get_suggestion_manager():
+    return SkillSuggestionManager()
 
 @router.post("", response_model=Skill)
 async def create_skill(skill_in: SkillCreate, manager: SkillManager = Depends(get_skill_manager)):
@@ -64,3 +68,29 @@ async def update_version(version_id: str, updates: dict, manager: SkillManager =
     if not version:
         raise HTTPException(status_code=404, detail="Version not found")
     return version
+
+# --- Skill Suggestion Endpoints ---
+@router.get("/suggestions", response_model=List[SkillSuggestion])
+async def list_suggestions(
+    manager: SkillSuggestionManager = Depends(get_suggestion_manager)
+):
+    return await manager.get_all_unresolved()
+
+@router.post("/suggestions/{suggestion_id}/create-skill", response_model=Skill)
+async def create_skill_from_suggestion(
+    suggestion_id: str,
+    manager: SkillSuggestionManager = Depends(get_suggestion_manager)
+):
+    skill = await manager.create_skill_from_suggestion(suggestion_id)
+    if not skill:
+        raise HTTPException(status_code=404, detail="Suggestion not found or already resolved")
+    return skill
+
+@router.delete("/suggestions/{suggestion_id}", status_code=204)
+async def delete_suggestion(
+    suggestion_id: str,
+    manager: SkillSuggestionManager = Depends(get_suggestion_manager)
+):
+    deleted = await manager.delete_suggestion(suggestion_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Suggestion not found")

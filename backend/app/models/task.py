@@ -25,7 +25,8 @@ class Task(BaseModel):
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
     metadata: Dict[str, Any] = {}
-    required_skills: List[str] = []          # NEW
+    required_skills: List[str] = []
+    depends_on: List[str] = []          # NEW: stores IDs of tasks this task depends on
 
 class TaskGraph(BaseModel):
     goal_id: str

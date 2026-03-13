@@ -28,6 +28,11 @@ DATABASE_URL = f"postgresql+asyncpg://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTG
 engine = create_async_engine(DATABASE_URL, echo=False)
 AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
+# Import tool executor
+from tool_executor import ToolExecutor
+
+tool_executor = ToolExecutor(simulator_url=SIMULATOR_URL)
+
 async def get_agent_from_db(agent_id: str):
     async with AsyncSessionLocal() as session:
         result = await session.execute(
@@ -69,28 +74,9 @@ async def call_ai_delta(agent_id, user_input, model_config):
         resp.raise_for_status()
         return resp.json()["response"]
 
-async def call_simulator(tool: str, payload: dict):
-    async with httpx.AsyncClient() as client:
-        resp = await client.post(f"{SIMULATOR_URL}/mock/{tool}", json=payload, timeout=30)
-        resp.raise_for_status()
-        return resp.json()
-
-# Tool execution stubs – to be replaced with real implementations later
-async def execute_tool(tool_name: str, params: dict, simulation: bool) -> dict:
-    if simulation:
-        return await call_simulator(tool_name, params)
-    # Real tool implementations (to be added later)
-    # For now, return a mock
-    return {"result": f"Executed {tool_name} with {params}"}
-
 def parse_tool_calls(ai_response: str) -> list:
-    """Parse AI response for tool calls in JSON format.
-    Expected format: {"tool": "tool_name", "params": {...}}
-    Possibly multiple such objects embedded in text.
-    We'll extract all JSON objects that have 'tool' and 'params' keys.
-    """
+    """Parse AI response for tool calls in JSON format."""
     tool_calls = []
-    # Simple regex to find JSON objects
     pattern = r'\{.*?\}'
     matches = re.findall(pattern, ai_response, re.DOTALL)
     for match in matches:
@@ -108,27 +94,24 @@ async def process_think_command(agent_id, user_input, model_config, simulation=F
         logger.error(f"Agent {agent_id} not found in DB")
         return
 
-    # Set status to RUNNING
     agent_data["status"] = "RUNNING"
     await update_agent_state(agent_id, agent_data)
 
-    # Initial AI call
     response = await call_ai_delta(agent_id, user_input, model_config)
 
-    # Parse tool calls
+    # Parse and execute tool calls
     tool_calls = parse_tool_calls(response)
-    # If there are tool calls, execute them sequentially and feed results back
-    while tool_calls:
-        # For now, just take the first? We'll execute all sequentially
-        for tc in tool_calls:
-            tool_result = await execute_tool(tc['tool'], tc['params'], simulation)
-            # Append result to conversation? We need to call AI again with the observation.
-            # For simplicity, we'll just append to response and break.
-            # In a full ReAct loop, we'd feed back and let AI decide next.
-            response += f"\nObservation: {json.dumps(tool_result)}"
-        # Optionally call AI again with updated conversation
-        # For now, we'll just continue with the response
-        tool_calls = []  # break loop
+    observations = []
+    for tc in tool_calls:
+        tool_name = tc['tool']
+        params = tc['params']
+        result = await tool_executor.execute(tool_name, params, simulation)
+        observations.append(f"Observation from {tool_name}: {json.dumps(result)}")
+    
+    # If there were tool calls, we might want to call AI again with observations
+    # For now, just append observations to response
+    if observations:
+        response += "\n" + "\n".join(observations)
 
     # Update memory
     if "memory" not in agent_data:
@@ -138,11 +121,9 @@ async def process_think_command(agent_id, user_input, model_config, simulation=F
         agent_data["memory"]["shortTerm"] = agent_data["memory"]["shortTerm"][-10:]
     agent_data["memory"]["tokenCount"] += len(response.split()) * 1.3
 
-    # Set status back to IDLE
     agent_data["status"] = "IDLE"
     await update_agent_state(agent_id, agent_data)
 
-    # --- NEW: Register agent as idle in Redis ---
     await register_agent_idle(agent_id)
 
     # Determine reporting target
@@ -200,13 +181,17 @@ Carry out the task. Use your tools if needed. When you are done, provide the fin
 """
     response = await call_ai_delta(agent_id, prompt, {})
 
-    # Parse and execute tool calls (similar to think)
+    # Parse and execute tool calls
     tool_calls = parse_tool_calls(response)
-    while tool_calls:
-        for tc in tool_calls:
-            tool_result = await execute_tool(tc['tool'], tc['params'], simulation)
-            response += f"\nObservation: {json.dumps(tool_result)}"
-        tool_calls = []
+    observations = []
+    for tc in tool_calls:
+        tool_name = tc['tool']
+        params = tc['params']
+        result = await tool_executor.execute(tool_name, params, simulation)
+        observations.append(f"Observation from {tool_name}: {json.dumps(result)}")
+    
+    if observations:
+        response += "\n" + "\n".join(observations)
 
     # Update memory
     if "memory" not in agent_data:
@@ -219,7 +204,6 @@ Carry out the task. Use your tools if needed. When you are done, provide the fin
     agent_data["status"] = "IDLE"
     await update_agent_state(agent_id, agent_data)
 
-    # --- NEW: Register agent as idle in Redis ---
     await register_agent_idle(agent_id)
 
     result = {

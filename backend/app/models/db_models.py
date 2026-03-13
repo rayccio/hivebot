@@ -29,7 +29,6 @@ class TaskModel(Base):
 
     id = Column(String, primary_key=True, default=generate_uuid)
     data = Column(JSON, nullable=False)
-    required_skills = Column(JSON, default=[])   # NEW
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
@@ -49,6 +48,20 @@ class SkillVersionModel(Base):
     data = Column(JSON, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+class SkillSuggestionModel(Base):
+    __tablename__ = "skill_suggestions"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    skill_name = Column(String, nullable=False)
+    goal_id = Column(String, nullable=False)
+    goal_description = Column(Text, nullable=False)
+    task_id = Column(String, nullable=False)
+    task_description = Column(Text, nullable=False)
+    suggested_by = Column(String, nullable=True)   # could be agent_id or "planner"
+    resolved = Column(Boolean, default=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    resolved_at = Column(DateTime(timezone=True), nullable=True)
 
 class UserModel(Base):
     __tablename__ = "users"

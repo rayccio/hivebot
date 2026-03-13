@@ -11,11 +11,11 @@ class Planner:
     def __init__(self):
         self.model = None  # Will be determined dynamically
 
-    async def plan(self, goal: str, hive_context: Optional[str] = None) -> Dict[str, Any]:
+    async def plan(self, goal: str, hive_context: Optional[str] = None, skills: Optional[List[Dict]] = None) -> Dict[str, Any]:
         """
         Decompose goal into tasks and dependencies.
         Returns: {
-            "tasks": [{"id": "...", "description": "...", "depends_on": ["task_id"]}],
+            "tasks": [{"id": "...", "description": "...", "depends_on": ["task_id"], "required_skills": ["skill_name"]}],
             "reasoning": "..."
         }
         """
@@ -33,20 +33,31 @@ class Planner:
         if not primary_model_id:
             raise RuntimeError("No primary AI model configured for planning")
 
-        system_prompt = """You are an AI task planner for a multi-agent system. Your job is to break down a user's goal into a set of discrete tasks that can be executed by autonomous agents (bots). Each task should be self‑contained and have clear inputs and outputs. Also identify dependencies between tasks.
+        # Build skills list for prompt
+        skills_text = ""
+        if skills:
+            skills_lines = ["Available skills:"]
+            for s in skills:
+                skills_lines.append(f"- {s['name']}: {s['description']}")
+            skills_text = "\n".join(skills_lines) + "\n\n"
+
+        system_prompt = f"""You are an AI task planner for a multi-agent system. Your job is to break down a user's goal into a set of discrete tasks that can be executed by autonomous agents (bots). Each task should be self‑contained and have clear inputs and outputs. Also identify dependencies between tasks.
+
+{skills_text}When listing required skills for a task, use the exact skill names from the list above. If a task requires a skill not in the list, you may invent a new skill name, but it will be less likely to be matched.
 
 Respond in JSON format with the following structure:
-{
+{{
   "tasks": [
-    {
+    {{
       "id": "task_1",  // Use simple IDs like task_1, task_2, etc.
       "description": "Describe what the agent should do",
-      "depends_on": []  // List of task IDs that must complete before this one
-    },
+      "depends_on": [],  // List of task IDs that must complete before this one
+      "required_skills": ["skill_name1", "skill_name2"] // List of skill names needed
+    }},
     ...
   ],
   "reasoning": "Brief explanation of the decomposition."
-}
+}}
 
 Do not include any other text outside the JSON.
 """
@@ -60,7 +71,7 @@ Do not include any other text outside the JSON.
             {"role": "user", "content": user_prompt}
         ]
 
-        config = {"model": primary_model_id, "temperature": 0.2, "max_tokens": 1000}
+        config = {"model": primary_model_id, "temperature": 0.2, "max_tokens": 1500}
         try:
             response = await generate_with_messages(messages, config)
             # Extract JSON from response (handle possible markdown)
@@ -71,15 +82,17 @@ Do not include any other text outside the JSON.
             # Ensure tasks list exists
             if "tasks" not in plan:
                 plan["tasks"] = []
-            # Ensure each task has depends_on
+            # Ensure each task has depends_on and required_skills
             for t in plan["tasks"]:
                 if "depends_on" not in t:
                     t["depends_on"] = []
+                if "required_skills" not in t:
+                    t["required_skills"] = []
             return plan
         except Exception as e:
             logger.error(f"Planning failed: {e}")
             # Fallback: create a single task
             return {
-                "tasks": [{"id": "task_1", "description": goal, "depends_on": []}],
+                "tasks": [{"id": "task_1", "description": goal, "depends_on": [], "required_skills": []}],
                 "reasoning": "Fallback: could not decompose, treating as single task."
             }

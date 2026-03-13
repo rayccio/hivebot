@@ -187,7 +187,6 @@ class OrchestratorService {
   }
 
   async updateHive(id: string, updates: HiveUpdate): Promise<Hive> {
-    // Map camelCase frontend fields to snake_case backend fields
     const payload: any = {};
     if (updates.name !== undefined) payload.name = updates.name;
     if (updates.description !== undefined) payload.description = updates.description;
@@ -715,6 +714,33 @@ class OrchestratorService {
     });
     if (!res.ok) throw new Error('Failed to update skill config');
     return res.json();
+  }
+
+  // ==================== SKILL SUGGESTIONS ====================
+
+  async listSkillSuggestions(): Promise<any[]> {
+    const res = await fetch(`${this.baseUrl}/skills/suggestions`, {
+      headers: this._authHeaders(),
+    });
+    if (!res.ok) throw new Error('Failed to list skill suggestions');
+    return res.json();
+  }
+
+  async createSkillFromSuggestion(suggestionId: string): Promise<any> {
+    const res = await fetch(`${this.baseUrl}/skills/suggestions/${suggestionId}/create-skill`, {
+      method: 'POST',
+      headers: this._authHeaders(),
+    });
+    if (!res.ok) throw new Error('Failed to create skill from suggestion');
+    return res.json();
+  }
+
+  async deleteSkillSuggestion(suggestionId: string): Promise<void> {
+    const res = await fetch(`${this.baseUrl}/skills/suggestions/${suggestionId}`, {
+      method: 'DELETE',
+      headers: this._authHeaders(),
+    });
+    if (!res.ok) throw new Error('Failed to delete suggestion');
   }
 
   // ==================== META ENDPOINTS ====================

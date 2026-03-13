@@ -66,3 +66,24 @@ class AgentSkill(BaseModel):
     installed_at: datetime
     config: Dict[str, Any] = {}
     enabled: bool = True
+
+# --- Skill Suggestion Models ---
+class SkillSuggestion(BaseModel):
+    id: str
+    skill_name: str
+    goal_id: str
+    goal_description: str
+    task_id: str
+    task_description: str
+    suggested_by: Optional[str] = None
+    resolved: bool = False
+    created_at: datetime
+    resolved_at: Optional[datetime] = None
+
+class SkillSuggestionCreate(BaseModel):
+    skill_name: str
+    goal_id: str
+    goal_description: str
+    task_id: str
+    task_description: str
+    suggested_by: Optional[str] = None

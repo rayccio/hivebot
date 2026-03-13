@@ -2,12 +2,14 @@ import json
 import os
 from typing import Dict, Optional, List, Set
 from datetime import datetime
-from ..models.types import Agent, AgentCreate, AgentUpdate, AgentStatus, ChannelConfig, MetaInfo
+from ..models.types import Agent, AgentCreate, AgentUpdate, AgentStatus, ChannelConfig, MetaInfo, ReasoningConfig, ReportingTarget
 from ..core.config import settings
 from .docker_service import DockerService
 from .redis_service import redis_service
 from ..repositories.agent_repository import AgentRepository
 from ..core.database import AsyncSessionLocal
+from ..constants import INITIAL_SOUL, INITIAL_IDENTITY, INITIAL_TOOLS
+from .hive_manager import HiveManager
 import uuid
 import shutil
 import logging
@@ -30,7 +32,7 @@ class AgentManager:
 
     async def create_agent(self, agent_in: AgentCreate) -> Agent:
         agent_id = f"b-{uuid.uuid4().hex[:4]}"
-        user_uid = agent_in.user_uid or "10001"
+        user_uid = agent_in.user_uid or settings.DEFAULT_AGENT_UID
         internal_api_key = settings.secrets.get("INTERNAL_API_KEY")
         if not internal_api_key:
             raise RuntimeError("Internal API key not configured")
@@ -137,8 +139,6 @@ class AgentManager:
         if agent and agent.container_id:
             status = self.docker.get_container_status(agent.container_id)
             agent.status = self._map_docker_status(status)
-
-        # ⚠️ Removed circular call to SkillManager.get_agent_skills (skills are already loaded from DB)
 
         return agent
 
@@ -298,3 +298,49 @@ class AgentManager:
             return AgentStatus.IDLE
         else:
             return AgentStatus.OFFLINE
+
+    # --- NEW: Spawn agent for a task ---
+    async def spawn_agent_for_task(self, hive_id: str, required_skill_ids: List[str]) -> Optional[Agent]:
+        """Create a new agent with the required skills and add it to the hive."""
+        from .skill_manager import SkillManager
+        skill_manager = SkillManager()
+
+        # Build a default agent configuration
+        agent_in = AgentCreate(
+            name="Auto-spawned Agent",
+            role="Worker",
+            soulMd=INITIAL_SOUL,
+            identityMd=INITIAL_IDENTITY,
+            toolsMd=INITIAL_TOOLS,
+            reasoning=ReasoningConfig(
+                model="openai/gpt-4o",  # or use global default
+                temperature=0.7,
+                topP=1.0,
+                maxTokens=150,
+                use_global_default=True
+            ),
+            reporting_target=ReportingTarget.PARENT,
+            parent_id=None,
+            user_uid=settings.DEFAULT_AGENT_UID,
+            channels=[]
+        )
+        agent = await self.create_agent(agent_in)
+
+        # Install the required skills
+        for skill_id in required_skill_ids:
+            skill = await skill_manager.get_skill(skill_id)
+            if not skill:
+                continue
+            # Get the latest active version
+            versions = await skill_manager.list_versions(skill.id)
+            active_versions = [v for v in versions if v.is_active]
+            if active_versions:
+                latest = max(active_versions, key=lambda v: v.created_at)
+                await skill_manager.install_skill(agent.id, skill.id, latest.id, {})
+
+        # Add agent to the hive
+        hive_manager = HiveManager(self)  # pass self as agent_manager
+        await hive_manager.add_agent(hive_id, agent)
+
+        logger.info(f"Spawned agent {agent.id} for hive {hive_id} with skills {required_skill_ids}")
+        return agent

@@ -10,8 +10,9 @@ import { LoadingSpinner } from './LoadingSpinner';
 import { toast } from 'react-hot-toast';
 import { orchestratorService } from '../services/orchestratorService';
 import { MetaBotsDashboard } from './MetaBotsDashboard';
+import { SkillSuggestions } from './SkillSuggestions'; // NEW
 
-// ---------- User Modal (unchanged) ----------
+// ---------- User Modal ----------
 interface UserModalProps {
   user?: UserAccount;
   hives: Hive[];
@@ -162,7 +163,7 @@ const UserModal: React.FC<UserModalProps> = ({ user, hives, onClose, onSave }) =
   );
 };
 
-// ---------- Skill Modal (unchanged) ----------
+// ---------- Skill Modal ----------
 interface SkillModalProps {
   skill?: Skill;
   onClose: () => void;
@@ -330,7 +331,7 @@ const SkillModal: React.FC<SkillModalProps> = ({ skill, onClose, onSave }) => {
   );
 };
 
-// ---------- Version Modal (unchanged) ----------
+// ---------- Version Modal ----------
 interface VersionModalProps {
   skillId: string;
   onClose: () => void;
@@ -1096,92 +1097,100 @@ export const GlobalConfig: React.FC<GlobalConfigProps> = ({
                 <p className="text-zinc-500">No skills yet. Create your first skill.</p>
               </div>
             ) : (
-              <div className="space-y-4">
-                {skills.map(skill => (
-                  <div key={skill.id} className="bg-zinc-900 border border-zinc-800 rounded-3xl overflow-hidden">
-                    <div 
-                      className="p-6 cursor-pointer hover:bg-zinc-800/30 transition-colors flex items-start justify-between"
-                      onClick={() => toggleSkillExpand(skill.id)}
-                    >
-                      <div className="flex-1">
-                        <div className="flex items-center gap-3">
-                          <span className="text-2xl">{skill.icon || '🧩'}</span>
-                          <div>
-                            <h4 className="text-lg font-bold text-emerald-400">{skill.name}</h4>
-                            <p className="text-sm text-zinc-400 mt-1">{skill.description}</p>
+              <>
+                <div className="space-y-4">
+                  {skills.map(skill => (
+                    <div key={skill.id} className="bg-zinc-900 border border-zinc-800 rounded-3xl overflow-hidden">
+                      <div 
+                        className="p-6 cursor-pointer hover:bg-zinc-800/30 transition-colors flex items-start justify-between"
+                        onClick={() => toggleSkillExpand(skill.id)}
+                      >
+                        <div className="flex-1">
+                          <div className="flex items-center gap-3">
+                            <span className="text-2xl">{skill.icon || '🧩'}</span>
+                            <div>
+                              <h4 className="text-lg font-bold text-emerald-400">{skill.name}</h4>
+                              <p className="text-sm text-zinc-400 mt-1">{skill.description}</p>
+                            </div>
                           </div>
-                        </div>
-                        <div className="flex gap-4 mt-3">
-                          <span className="text-[10px] px-2 py-1 bg-zinc-800 rounded-full text-zinc-400">{skill.type}</span>
-                          <span className="text-[10px] px-2 py-1 bg-zinc-800 rounded-full text-zinc-400">{skill.visibility}</span>
-                          {skill.tags.map(tag => (
-                            <span key={tag} className="text-[10px] px-2 py-1 bg-zinc-800 rounded-full text-zinc-400">#{tag}</span>
-                          ))}
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={(e) => { e.stopPropagation(); setShowVersionModal(skill); }}
-                          className="p-2 text-zinc-500 hover:text-emerald-400 transition-colors"
-                          title="Add Version"
-                        >
-                          <Icons.Plus />
-                        </button>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); setEditingSkill(skill); }}
-                          className="p-2 text-zinc-500 hover:text-white transition-colors"
-                          title="Edit Skill"
-                        >
-                          <Icons.Settings />
-                        </button>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); handleDeleteSkill(skill.id); }}
-                          className="p-2 text-zinc-500 hover:text-red-400 transition-colors"
-                          title="Delete Skill"
-                        >
-                          <Icons.Trash />
-                        </button>
-                        <div className={`transform transition-transform ${expandedSkill === skill.id ? 'rotate-180' : ''}`}>
-                          <svg className="w-5 h-5 text-zinc-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                          </svg>
-                        </div>
-                      </div>
-                    </div>
-
-                    {expandedSkill === skill.id && (
-                      <div className="border-t border-zinc-800 p-6 bg-zinc-950/50">
-                        <h5 className="text-xs font-black uppercase tracking-widest text-zinc-500 mb-4">Versions</h5>
-                        {skillVersions[skill.id] ? (
-                          <div className="space-y-3">
-                            {skillVersions[skill.id].map(version => (
-                              <div key={version.id} className="bg-zinc-900 rounded-xl p-4 border border-zinc-800">
-                                <div className="flex items-center justify-between">
-                                  <div className="flex items-center gap-3">
-                                    <span className="text-sm font-bold text-emerald-400">v{version.version}</span>
-                                    {version.isActive && (
-                                      <span className="text-[8px] px-2 py-1 bg-emerald-500/10 text-emerald-400 rounded-full">active</span>
-                                    )}
-                                  </div>
-                                  <span className="text-[10px] text-zinc-500">{new Date(version.createdAt).toLocaleDateString()}</span>
-                                </div>
-                                <div className="mt-2 text-xs text-zinc-400 font-mono whitespace-pre-wrap max-h-40 overflow-auto">
-                                  {version.code.substring(0, 200)}...
-                                </div>
-                                {version.changelog && (
-                                  <p className="mt-2 text-xs text-zinc-500 italic">{version.changelog}</p>
-                                )}
-                              </div>
+                          <div className="flex gap-4 mt-3">
+                            <span className="text-[10px] px-2 py-1 bg-zinc-800 rounded-full text-zinc-400">{skill.type}</span>
+                            <span className="text-[10px] px-2 py-1 bg-zinc-800 rounded-full text-zinc-400">{skill.visibility}</span>
+                            {skill.tags.map(tag => (
+                              <span key={tag} className="text-[10px] px-2 py-1 bg-zinc-800 rounded-full text-zinc-400">#{tag}</span>
                             ))}
                           </div>
-                        ) : (
-                          <div className="text-center py-4 text-zinc-500 italic">Loading versions...</div>
-                        )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setShowVersionModal(skill); }}
+                            className="p-2 text-zinc-500 hover:text-emerald-400 transition-colors"
+                            title="Add Version"
+                          >
+                            <Icons.Plus />
+                          </button>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setEditingSkill(skill); }}
+                            className="p-2 text-zinc-500 hover:text-white transition-colors"
+                            title="Edit Skill"
+                          >
+                            <Icons.Settings />
+                          </button>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleDeleteSkill(skill.id); }}
+                            className="p-2 text-zinc-500 hover:text-red-400 transition-colors"
+                            title="Delete Skill"
+                          >
+                            <Icons.Trash />
+                          </button>
+                          <div className={`transform transition-transform ${expandedSkill === skill.id ? 'rotate-180' : ''}`}>
+                            <svg className="w-5 h-5 text-zinc-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                            </svg>
+                          </div>
+                        </div>
                       </div>
-                    )}
-                  </div>
-                ))}
-              </div>
+
+                      {expandedSkill === skill.id && (
+                        <div className="border-t border-zinc-800 p-6 bg-zinc-950/50">
+                          <h5 className="text-xs font-black uppercase tracking-widest text-zinc-500 mb-4">Versions</h5>
+                          {skillVersions[skill.id] ? (
+                            <div className="space-y-3">
+                              {skillVersions[skill.id].map(version => (
+                                <div key={version.id} className="bg-zinc-900 rounded-xl p-4 border border-zinc-800">
+                                  <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-3">
+                                      <span className="text-sm font-bold text-emerald-400">v{version.version}</span>
+                                      {version.isActive && (
+                                        <span className="text-[8px] px-2 py-1 bg-emerald-500/10 text-emerald-400 rounded-full">active</span>
+                                      )}
+                                    </div>
+                                    <span className="text-[10px] text-zinc-500">{new Date(version.createdAt).toLocaleDateString()}</span>
+                                  </div>
+                                  <div className="mt-2 text-xs text-zinc-400 font-mono whitespace-pre-wrap max-h-40 overflow-auto">
+                                    {version.code.substring(0, 200)}...
+                                  </div>
+                                  {version.changelog && (
+                                    <p className="mt-2 text-xs text-zinc-500 italic">{version.changelog}</p>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="text-center py-4 text-zinc-500 italic">Loading versions...</div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                {/* Skill Suggestions Section */}
+                <div className="mt-12 border-t border-zinc-800 pt-8">
+                  <h4 className="text-lg font-black tracking-tighter text-emerald-500 mb-4">Skill Suggestions</h4>
+                  <SkillSuggestions />
+                </div>
+              </>
             )}
           </div>
         )}
