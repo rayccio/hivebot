@@ -222,6 +222,13 @@ class HiveMindConfig(BaseModel):
     access_level: HiveMindAccessLevel = HiveMindAccessLevel.ISOLATED
     shared_hive_ids: List[str] = []
 
+    # 👇 Added to accept camelCase aliases from frontend
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+        use_enum_values=True
+    )
+
 class Hive(BaseModel):
     id: str
     name: str
