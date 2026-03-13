@@ -246,17 +246,23 @@ export const AgentDetails: React.FC<AgentDetailsProps> = ({ agent, onUpdate, onR
     }
   }, [selectedChildId, agent.id, localSubAgentIds, handleUpdate]);
 
+  // ========== FILE UPLOAD – FIXED ==========
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setIsUploading(true);
     try {
       const newFile = await orchestratorService.uploadAgentFile(agent.id, file);
-      const updatedAgent = await orchestratorService.getAgent(agent.id);
-      setLocalSubAgentIds(updatedAgent.subAgentIds || []);
-      await handleUpdate(updatedAgent);
+      // Update local state immediately with the new file
+      const updatedAgent = {
+        ...agent,
+        localFiles: [...agent.localFiles, newFile]
+      };
+      await onUpdate(updatedAgent);
+      toast.success(`File ${newFile.name} uploaded`);
     } catch (err) {
       console.error('File upload failed', err);
+      toast.error('File upload failed');
     } finally {
       setIsUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -716,7 +722,7 @@ export const AgentDetails: React.FC<AgentDetailsProps> = ({ agent, onUpdate, onR
             </div>
           )}
 
-          {/* Bot Files Tab (renamed) */}
+          {/* Bot Files Tab (FIXED: file upload now works) */}
           {activeTab === 'files' && (
             <div className="grid grid-cols-1 md:grid-cols-4 gap-6 h-[600px] animate-in fade-in duration-300">
               <div className="md:col-span-1 bg-zinc-900 rounded-3xl border border-zinc-800 p-4 space-y-6 flex flex-col overflow-hidden">
