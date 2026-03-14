@@ -1,5 +1,6 @@
-import React, { useState, useCallback, useMemo, useEffect } from 'react';
+import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Agent, AgentStatus, ReportingTarget, Message, FileEntry, AgentCreate, Hive, HiveCreate, HiveUpdate, HiveMindConfig, HiveMindAccessLevel, UserAccount, GlobalSettings, UserRole } from './types';
 import { INITIAL_SOUL, INITIAL_IDENTITY, INITIAL_TOOLS, INITIAL_USER_MD, Icons } from './constants';
 import { Sidebar } from './components/Sidebar';
@@ -29,6 +30,17 @@ import { PlanView } from './components/PlanView';
 import { orchestratorService } from './services/orchestratorService';
 import { wsService } from './services/websocketService';
 import { toast } from 'react-hot-toast';
+
+// Create a client for React Query
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      refetchOnWindowFocus: false,
+      retry: 1,
+      staleTime: 1000 * 60 * 5, // 5 minutes
+    },
+  },
+});
 
 // Main App Content with Auth
 const AppContent: React.FC = () => {
@@ -63,6 +75,9 @@ const AppContent: React.FC = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   const { getPrimaryModel, refreshProviders } = useProviders();
+
+  // Ref for interval cleanup
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     if (user && !user.password_changed && gatewayEnabled && !showDefaultPasswordToast) {
@@ -165,16 +180,33 @@ const AppContent: React.FC = () => {
     loadInitialData();
   }, [user, refreshProviders]);
 
-  // Fetch active agents when hive changes
+  // Fetch active agents when hive changes and set up periodic refresh
+  const fetchActiveAgents = useCallback(async (hiveId: string) => {
+    try {
+      const agents = await orchestratorService.getHiveActiveAgents(hiveId);
+      setActiveAgents(agents);
+    } catch (err) {
+      console.warn('Could not fetch active agents', err);
+    }
+  }, []);
+
   useEffect(() => {
     if (activeHiveId) {
-      orchestratorService.getHiveActiveAgents(activeHiveId)
-        .then(setActiveAgents)
-        .catch(err => console.warn('Could not fetch active agents', err));
+      fetchActiveAgents(activeHiveId);
+      // Set up interval to refresh every 10 seconds
+      intervalRef.current = setInterval(() => {
+        fetchActiveAgents(activeHiveId);
+      }, 10000);
     } else {
       setActiveAgents([]);
     }
-  }, [activeHiveId]);
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+    };
+  }, [activeHiveId, fetchActiveAgents]);
 
   useEffect(() => {
     if (activeHiveId) {
@@ -233,24 +265,19 @@ const AppContent: React.FC = () => {
     (activeAgents.find(a => a.id === selectedAgentId) || hiveAgents.find(a => a.id === selectedAgentId)) || null
   , [activeAgents, hiveAgents, selectedAgentId]);
 
-  // --- FIXED: optimistic update function ---
+  // Optimistic update function
   const updateHive = async (hiveId: string, updates: HiveUpdate) => {
-    // 1. Optimistic update – apply changes immediately
     setHives(prev =>
       prev.map(h => (h.id === hiveId ? { ...h, ...updates } : h))
     );
-
     try {
-      // 2. Persist to backend
       const updated = await orchestratorService.updateHive(hiveId, updates);
-      // 3. Replace with the server’s response (in case it differs)
       setHives(prev =>
         prev.map(h => (h.id === hiveId ? updated : h))
       );
       return updated;
     } catch (err) {
       console.error('Failed to update hive', err);
-      // 4. On error, revert by re‑fetching the current state from the server
       const fresh = await orchestratorService.getHive(hiveId);
       setHives(prev => prev.map(h => (h.id === hiveId ? fresh : h)));
       throw err;
@@ -793,24 +820,26 @@ const AppContent: React.FC = () => {
 const App: React.FC = () => {
   return (
     <BrowserRouter>
-      <AuthProvider>
-        <ProviderProvider>
-          <BridgeProvider>
-            <Routes>
-              <Route path="/login" element={<LoginPage />} />
-              <Route path="/unauthorized" element={<UnauthorizedPage />} />
-              <Route
-                path="/*"
-                element={
-                  <ProtectedRoute>
-                    <AppContent />
-                  </ProtectedRoute>
-                }
-              />
-            </Routes>
-          </BridgeProvider>
-        </ProviderProvider>
-      </AuthProvider>
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <ProviderProvider>
+            <BridgeProvider>
+              <Routes>
+                <Route path="/login" element={<LoginPage />} />
+                <Route path="/unauthorized" element={<UnauthorizedPage />} />
+                <Route
+                  path="/*"
+                  element={
+                    <ProtectedRoute>
+                      <AppContent />
+                    </ProtectedRoute>
+                  }
+                />
+              </Routes>
+            </BridgeProvider>
+          </ProviderProvider>
+        </AuthProvider>
+      </QueryClientProvider>
     </BrowserRouter>
   );
 };

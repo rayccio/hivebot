@@ -3,6 +3,7 @@ from sqlalchemy import select, update, delete
 from ..models.db_models import SkillSuggestionModel
 from ..models.skill import SkillSuggestion, SkillSuggestionCreate
 from ..utils.json_encoder import prepare_json_data
+from datetime import datetime
 import json
 import uuid
 

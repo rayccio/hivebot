@@ -1,129 +1,54 @@
 import React, { useState, useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Icons } from '../constants';
 import { orchestratorService } from '../services/orchestratorService';
 import { LoadingSpinner } from './LoadingSpinner';
 import { toast } from 'react-hot-toast';
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 
-interface TestAgent {
-  id: string;
-  name: string;
-  parent_id?: string;
-  improved: boolean;
-  simulation: boolean;
-  created_at: string;
-  status: string;
-  mutation?: string;
-  promoted?: boolean;
-}
-
-interface PerformanceStats {
-  period_hours: number;
-  test_agents: {
-    total_tasks: number;
-    completed: number;
-    success_rate: number;
-  };
-  production_agents: {
-    total_tasks: number;
-    completed: number;
-    success_rate: number;
-  };
-}
-
-interface AgentMetrics {
-  agent_id: string;
-  period_hours: number;
-  total_tasks: number;
-  completed: number;
-  success_rate: number;
-  avg_response_time_seconds: number;
-  tasks: Array<{
-    id: string;
-    status: string;
-    created_at: string;
-    completed_at?: string;
-  }>;
-}
-
-interface ABTest {
-  test_agent_id: string;
-  test_agent_name: string;
-  parent_agent_id: string;
-  parent_agent_name: string;
-  mutation: string;
-  created_at: string;
-  promoted: boolean;
-  promoted_at?: string;
-}
-
-interface MetaLog {
-  timestamp: string;
-  event: string;
-  agent_id: string;
-  agent_name: string;
-  parent_agent?: string;
-  mutation?: string;
-  promoted?: boolean;
-}
-
 export const MetaBotsDashboard: React.FC = () => {
-  const [status, setStatus] = useState<any>(null);
-  const [testAgents, setTestAgents] = useState<TestAgent[]>([]);
-  const [performance, setPerformance] = useState<PerformanceStats | null>(null);
-  const [logs, setLogs] = useState<MetaLog[]>([]);
-  const [abTests, setAbTests] = useState<ABTest[]>([]);
-  const [selectedAgentMetrics, setSelectedAgentMetrics] = useState<AgentMetrics | null>(null);
-  const [loading, setLoading] = useState(true);
   const [selectedPeriod, setSelectedPeriod] = useState(24);
   const [metricsAgentId, setMetricsAgentId] = useState<string | null>(null);
-  const [metricsLoading, setMetricsLoading] = useState(false);
 
-  const loadData = async () => {
-    setLoading(true);
-    try {
-      const [statusRes, testAgentsRes, perfRes, logsRes, abTestsRes] = await Promise.all([
-        orchestratorService.getMetaStatus(),
-        orchestratorService.getTestAgents(),
-        orchestratorService.getMetaPerformance(selectedPeriod),
-        orchestratorService.getMetaLogs(),
-        orchestratorService.listABTests()
-      ]);
-      setStatus(statusRes);
-      setTestAgents(testAgentsRes);
-      setPerformance(perfRes);
-      setLogs(logsRes);
-      setAbTests(abTestsRes);
-    } catch (err) {
-      console.error('Failed to load meta data', err);
-      toast.error('Failed to load meta-bot data');
-    } finally {
-      setLoading(false);
-    }
-  };
+  // Fetch meta status
+  const { data: status, isLoading: statusLoading } = useQuery({
+    queryKey: ['metaStatus'],
+    queryFn: () => orchestratorService.getMetaStatus(),
+    refetchInterval: 60000, // refresh every minute
+  });
 
-  useEffect(() => {
-    loadData();
-  }, [selectedPeriod]);
+  // Fetch test agents
+  const { data: testAgents = [], isLoading: testAgentsLoading } = useQuery({
+    queryKey: ['testAgents'],
+    queryFn: () => orchestratorService.getTestAgents(),
+  });
 
-  useEffect(() => {
-    if (metricsAgentId) {
-      loadAgentMetrics(metricsAgentId);
-    }
-  }, [metricsAgentId]);
+  // Fetch performance stats (depends on period)
+  const { data: performance, isLoading: perfLoading } = useQuery({
+    queryKey: ['metaPerformance', selectedPeriod],
+    queryFn: () => orchestratorService.getMetaPerformance(selectedPeriod),
+  });
 
-  const loadAgentMetrics = async (agentId: string) => {
-    setMetricsLoading(true);
-    try {
-      const metrics = await orchestratorService.getAgentMetrics(agentId, selectedPeriod);
-      setSelectedAgentMetrics(metrics);
-    } catch (err) {
-      console.error('Failed to load agent metrics', err);
-      toast.error('Failed to load agent metrics');
-    } finally {
-      setMetricsLoading(false);
-    }
-  };
+  // Fetch logs
+  const { data: logs = [], isLoading: logsLoading } = useQuery({
+    queryKey: ['metaLogs'],
+    queryFn: () => orchestratorService.getMetaLogs(),
+  });
+
+  // Fetch A/B tests
+  const { data: abTests = [], isLoading: abTestsLoading } = useQuery({
+    queryKey: ['abTests'],
+    queryFn: () => orchestratorService.listABTests(),
+  });
+
+  // Fetch agent metrics when agent is selected
+  const { data: selectedAgentMetrics, isLoading: metricsLoading } = useQuery({
+    queryKey: ['agentMetrics', metricsAgentId, selectedPeriod],
+    queryFn: () => metricsAgentId ? orchestratorService.getAgentMetrics(metricsAgentId, selectedPeriod) : null,
+    enabled: !!metricsAgentId,
+  });
+
+  const loading = statusLoading || testAgentsLoading || perfLoading || logsLoading || abTestsLoading;
 
   const COLORS = ['#10b981', '#3b82f6', '#f59e0b', '#ef4444'];
 
@@ -306,7 +231,7 @@ export const MetaBotsDashboard: React.FC = () => {
               Metrics for {selectedAgentMetrics.agent_id}
             </h3>
             <button
-              onClick={() => setSelectedAgentMetrics(null)}
+              onClick={() => setMetricsAgentId(null)}
               className="text-zinc-500 hover:text-white"
             >
               <Icons.X />

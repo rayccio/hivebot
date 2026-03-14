@@ -168,6 +168,9 @@ DOCKER_NETWORK=hivebot_network
 
 # Frontend API URL (injected at build time) – base backend URL, no path
 VITE_API_URL=http://${URL_IP}:8000
+
+# Auto‑spawn agents by default
+AUTO_SPAWN=true
 EOF
 
 # Copy .env to frontend build context (so VITE_API_URL is embedded)
@@ -368,10 +371,18 @@ $COMPOSE_CMD build --no-cache
 echo -e "${YELLOW}🐳 Starting Docker services...${NC}"
 $COMPOSE_CMD up -d
 
-# --- 10. Wait for PostgreSQL and run database migrations ---
-echo -e "${YELLOW}⏳ Waiting for PostgreSQL to be ready...${NC}"
-sleep 10  # give PostgreSQL time to initialize
+# --- 10. Wait for backend to be healthy ---
+echo -e "${YELLOW}⏳ Waiting for backend to become healthy...${NC}"
+for i in {1..30}; do
+    if docker inspect --format='{{json .State.Health.Status}}' hivebot_backend 2>/dev/null | grep -q '"healthy"'; then
+        echo -e "${GREEN}   ✅ Backend is healthy.${NC}"
+        break
+    fi
+    echo -n "."
+    sleep 2
+done
 
+# --- 11. Run database migrations (if any) ---
 echo -e "${YELLOW}📦 Running database migrations...${NC}"
 docker exec hivebot_backend python -c "
 import asyncio
@@ -388,11 +399,15 @@ async def create_tables():
 asyncio.run(create_tables())
 " || echo -e "${RED}❌ Migration failed, but continuing...${NC}"
 
-# --- 11. Seed evaluation tasks ---
+# --- 12. Seed evaluation tasks ---
 echo -e "${YELLOW}🌱 Seeding evaluation tasks...${NC}"
 docker exec hivebot_backend python /app/scripts/seed_eval_tasks.py || echo -e "${RED}❌ Seeding failed, but continuing...${NC}"
 
-# --- 12. Final status ---
+# --- 13. Create skill suggestions table ---
+echo -e "${YELLOW}🔧 Creating skill suggestions table...${NC}"
+docker exec hivebot_backend python /app/scripts/create_skill_suggestions_table.py || echo -e "${RED}❌ Skill suggestions table creation failed, but continuing...${NC}"
+
+# --- 14. Final status ---
 clear
 show_small_banner
 echo -e "${GREEN}✅ HiveBot is now running!${NC}"

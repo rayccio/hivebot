@@ -5,6 +5,7 @@ import logging
 import httpx
 import redis.asyncio as redis
 import uuid
+import random
 from datetime import datetime, timedelta
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
@@ -44,7 +45,9 @@ async def fetch_all_agents():
         agents = []
         for row in rows:
             agent_id = row[0]
-            data = json.loads(row[1])
+            data = row[1]
+            if isinstance(data, str):
+                data = json.loads(data)
             agents.append((agent_id, data))
         return agents
 
@@ -56,7 +59,10 @@ async def fetch_agent(agent_id: str):
         )
         row = result.fetchone()
         if row:
-            return json.loads(row[0])
+            data = row[0]
+            if isinstance(data, str):
+                return json.loads(data)
+            return data
     return None
 
 async def update_agent(agent_id: str, data: dict):
@@ -96,10 +102,13 @@ async def fetch_evaluation_tasks(limit: int = TEST_TASK_SAMPLE_SIZE):
         rows = result.fetchall()
         tasks = []
         for row in rows:
+            input_data = row[2]
+            if isinstance(input_data, str):
+                input_data = json.loads(input_data)
             tasks.append({
                 "id": row[0],
                 "description": row[1],
-                "input_data": json.loads(row[2]) if row[2] else {}
+                "input_data": input_data
             })
         return tasks
 
@@ -120,8 +129,7 @@ async def fetch_available_models():
                         models.append(f"{provider_key}/{model_id}")
         return models
 
-# --- Ensure evaluation goal exists (we no longer need a real goal; we'll just use a dummy goal_id) ---
-# For simplicity, we'll generate a random goal_id per evaluation run.
+# --- Generate a dummy goal_id per evaluation run ---
 def generate_goal_id():
     return f"g-{uuid.uuid4().hex[:8]}"
 
@@ -129,15 +137,24 @@ def generate_goal_id():
 async def get_agent_performance(agent_id: str, hours: int = EVALUATION_PERIOD_HOURS):
     since = datetime.utcnow() - timedelta(hours=hours)
     async with AsyncSessionLocal() as session:
+        # Ensure 'since' is a datetime object (defensive)
+        if isinstance(since, str):
+            since = datetime.fromisoformat(since)
         result = await session.execute(
             text("""
                 SELECT data FROM tasks
                 WHERE data->>'assigned_agent_id' = :agent_id
                 AND (data->>'created_at')::timestamptz >= :since
             """),
-            {"agent_id": agent_id, "since": since.isoformat()}
+            {"agent_id": agent_id, "since": since}
         )
-        tasks = [json.loads(r[0]) for r in result.fetchall()]
+        rows = result.fetchall()
+        tasks = []
+        for r in rows:
+            task_data = r[0]
+            if isinstance(task_data, str):
+                task_data = json.loads(task_data)
+            tasks.append(task_data)
         if len(tasks) < MIN_TASKS_FOR_EVALUATION:
             return None
         total = len(tasks)

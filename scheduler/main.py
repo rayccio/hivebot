@@ -30,6 +30,28 @@ AUTO_ASSIGN = os.getenv("SCHEDULER_AUTO_ASSIGN", "false").lower() == "true"
 ENABLED = os.getenv("SCHEDULER_ENABLED", "false").lower() == "true"
 TASK_TIMEOUT_SECONDS = int(os.getenv("TASK_TIMEOUT_SECONDS", 300))  # 5 minutes default
 
+async def wait_for_db(pg_pool, retries=30, delay=2):
+    """Wait for the agents table to exist."""
+    for attempt in range(retries):
+        try:
+            async with pg_pool.acquire() as conn:
+                # Check if agents table exists
+                result = await conn.fetchval("""
+                    SELECT EXISTS (
+                        SELECT FROM information_schema.tables 
+                        WHERE table_name = 'agents'
+                    )
+                """)
+                if result:
+                    logger.info("Database tables are ready.")
+                    return
+                else:
+                    logger.warning(f"Agents table not yet created (attempt {attempt+1}/{retries})")
+        except Exception as e:
+            logger.warning(f"Database connection error (attempt {attempt+1}/{retries}): {e}")
+        await asyncio.sleep(delay)
+    raise Exception("Database not ready after multiple attempts")
+
 async def health_check(request):
     return web.json_response({"status": "ok", "service": "scheduler"})
 
@@ -72,7 +94,12 @@ async def maintenance_loop(pg_pool, redis_client):
                     if not row:
                         await redis_client.zrem("tasks:pending", task_id)
                         continue
-                    task_data = json.loads(row['data'])
+                    # row['data'] may be dict or string
+                    raw_data = row['data']
+                    if isinstance(raw_data, str):
+                        task_data = json.loads(raw_data)
+                    else:
+                        task_data = raw_data
                     if task_data.get('status') != 'pending':
                         await redis_client.zrem("tasks:pending", task_id)
                         logger.debug(f"Removed {task_id} from pending queue (status {task_data['status']})")
@@ -88,7 +115,11 @@ async def maintenance_loop(pg_pool, redis_client):
             """, now - timedelta(seconds=TASK_TIMEOUT_SECONDS))
             for row in rows:
                 task_id = row['id']
-                task_data = json.loads(row['data'])
+                raw_data = row['data']
+                if isinstance(raw_data, str):
+                    task_data = json.loads(raw_data)
+                else:
+                    task_data = raw_data
                 agent_id = task_data.get('assigned_agent_id')
                 logger.warning(f"Task {task_id} timed out, re-queuing")
                 # Reset task status
@@ -109,7 +140,11 @@ async def maintenance_loop(pg_pool, redis_client):
                     # Optionally mark agent as error
                     agent_row = await conn.fetchrow("SELECT data FROM agents WHERE id = $1", agent_id)
                     if agent_row:
-                        agent_data = json.loads(agent_row['data'])
+                        raw_agent = agent_row['data']
+                        if isinstance(raw_agent, str):
+                            agent_data = json.loads(raw_agent)
+                        else:
+                            agent_data = raw_agent
                         agent_data['status'] = 'ERROR'
                         await conn.execute(
                             "UPDATE agents SET data = $1 WHERE id = $2",
@@ -132,7 +167,11 @@ async def assignment_loop(pg_pool, redis_client):
             if not task_row:
                 await redis_client.zrem("tasks:pending", task_id)
                 continue
-            task_data = json.loads(task_row['data'])
+            raw_data = task_row['data']
+            if isinstance(raw_data, str):
+                task_data = json.loads(raw_data)
+            else:
+                task_data = raw_data
             if task_data['status'] != 'pending':
                 await redis_client.zrem("tasks:pending", task_id)
                 continue
@@ -152,7 +191,11 @@ async def assignment_loop(pg_pool, redis_client):
             matching_agent = None
             for agent_row in agents_rows:
                 agent_id = agent_row['id']
-                agent_data = json.loads(agent_row['data'])
+                raw_agent = agent_row['data']
+                if isinstance(raw_agent, str):
+                    agent_data = json.loads(raw_agent)
+                else:
+                    agent_data = raw_agent
                 agent_skills = [s['skillId'] for s in agent_data.get('skills', [])]
                 if set(required_skills).issubset(set(agent_skills)):
                     matching_agent = agent_id
@@ -172,13 +215,19 @@ async def assignment_loop(pg_pool, redis_client):
             )
 
             # Update agent status in DB
-            agent_data = await conn.fetchval("SELECT data FROM agents WHERE id = $1", matching_agent)
-            agent_data = json.loads(agent_data)
-            agent_data['status'] = 'ASSIGNED'
-            await conn.execute(
-                "UPDATE agents SET data = $1 WHERE id = $2",
-                json.dumps(agent_data), matching_agent
-            )
+            # We already have agent_data for the matching agent, but we need to fetch again to be safe
+            agent_row = await conn.fetchrow("SELECT data FROM agents WHERE id = $1", matching_agent)
+            if agent_row:
+                raw_agent = agent_row['data']
+                if isinstance(raw_agent, str):
+                    agent_data = json.loads(raw_agent)
+                else:
+                    agent_data = raw_agent
+                agent_data['status'] = 'ASSIGNED'
+                await conn.execute(
+                    "UPDATE agents SET data = $1 WHERE id = $2",
+                    json.dumps(agent_data), matching_agent
+                )
 
             # Remove from Redis queues
             await redis_client.zrem("tasks:pending", task_id)
@@ -205,6 +254,9 @@ async def main():
 
     pg_pool = await asyncpg.create_pool(POSTGRES_DSN)
     redis_client = await redis.from_url(f"redis://{REDIS_HOST}:{REDIS_PORT}", decode_responses=True)
+
+    # Wait for database tables to be ready
+    await wait_for_db(pg_pool)
 
     # Start health server
     asyncio.create_task(start_health_server())

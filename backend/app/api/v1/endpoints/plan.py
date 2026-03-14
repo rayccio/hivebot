@@ -8,6 +8,7 @@ from ....services.docker_service import DockerService
 from ....services.redis_service import redis_service
 from ....services.skill_manager import SkillManager
 from ....services.skill_suggestion_manager import SkillSuggestionManager
+from ....models.skill import SkillSuggestionCreate  # <-- IMPORT ADDED
 from ....models.task import Task, TaskStatus
 from ....services.hive_manager import HiveManager
 from ....core.config import settings

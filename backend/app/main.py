@@ -4,6 +4,7 @@ from fastapi.responses import JSONResponse
 from .core.config import settings
 from .api.v1.router import api_router
 from .api.v1.endpoints.ws import router as ws_router
+from .api.v1.endpoints import internal  # <-- IMPORT INTERNAL ROUTER
 from .services.redis_service import redis_service
 from .services.ws_manager import manager
 from .services.agent_manager import AgentManager
@@ -103,7 +104,14 @@ def create_app() -> FastAPI:
             allow_headers=["*"],
         )
 
+    # --- Include the main API router (does NOT include internal) ---
     app.include_router(api_router, prefix=settings.API_V1_STR)
+
+    # --- Explicitly include the internal AI router under /internal ---
+    app.include_router(internal.router, prefix=f"{settings.API_V1_STR}/internal")
+    logger.info(f"Included internal router at prefix: {settings.API_V1_STR}/internal")
+
+    # --- WebSocket router (no prefix) ---
     app.include_router(ws_router)
 
     @app.get("/health")
@@ -309,6 +317,13 @@ Provide a concise summary (max 100 words) that captures the key points and conte
                         logger.error(f"Summarization failed for agent {agent.id}: {e}")
             except Exception as e:
                 logger.exception("Error in memory summarization task")
+
+    # --- Log all registered routes after app creation ---
+    logger.info("=== Registered Routes ===")
+    for route in app.routes:
+        if hasattr(route, "path"):
+            logger.info(f"  {route.path}")
+    logger.info("=========================")
 
     return app
 

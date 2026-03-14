@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useQueries } from '@tanstack/react-query';
 import { Agent, AgentStatus, Message, FileEntry, ReportingTarget, ChannelConfig, ChannelCredentials, Skill, SkillVersion } from '../types';
 import { Icons } from '../constants';
 import { orchestratorService } from '../services/orchestratorService';
@@ -70,19 +71,37 @@ export const AgentDetails: React.FC<AgentDetailsProps> = ({ agent, onUpdate, onR
     setInstalledSkills(agent.skills || []);
   }, [agent]);
 
-  // Load versions for installed skills
+  // Load versions for installed skills using React Query
+  const versionQueries = useQueries({
+    queries: installedSkills.map(as => ({
+      queryKey: ['skillVersions', as.skillId],
+      queryFn: () => orchestratorService.listSkillVersions(as.skillId),
+      enabled: true,
+      staleTime: 1000 * 60 * 5, // 5 minutes
+    })),
+  });
+
+  // Update skillVersions when queries resolve
   useEffect(() => {
-    installedSkills.forEach(async (as) => {
-      if (!skillVersions[as.skillId]) {
-        try {
-          const versions = await orchestratorService.listSkillVersions(as.skillId);
-          setSkillVersions(prev => ({ ...prev, [as.skillId]: versions }));
-        } catch (err) {
-          console.error('Failed to load skill versions', err);
-        }
+    const newVersions: Record<string, SkillVersion[]> = {};
+    installedSkills.forEach((as, index) => {
+      const data = versionQueries[index]?.data;
+      if (data) {
+        newVersions[as.skillId] = data;
       }
     });
-  }, [installedSkills]);
+    setSkillVersions(prev => ({ ...prev, ...newVersions }));
+  }, [versionQueries.map(q => q.data)]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Show error toasts for failed queries
+  useEffect(() => {
+    versionQueries.forEach((query, index) => {
+      if (query.error) {
+        const skillId = installedSkills[index]?.skillId;
+        toast.error(`Failed to load versions for skill ${skillId}`);
+      }
+    });
+  }, [versionQueries, installedSkills]);
 
   const handleUpdate = useCallback(async (updates: Partial<Agent>) => {
     setIsSaving(true);
@@ -403,7 +422,7 @@ export const AgentDetails: React.FC<AgentDetailsProps> = ({ agent, onUpdate, onR
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
         <div className="lg:col-span-3">
-          {/* Soul, Identity, Tools tabs (unchanged) */}
+          {/* Soul, Identity, Tools tabs */}
           {activeTab === 'soul' && (
             <div className="bg-zinc-900 rounded-3xl border border-zinc-800 p-6 shadow-2xl">
               <textarea
@@ -438,7 +457,7 @@ export const AgentDetails: React.FC<AgentDetailsProps> = ({ agent, onUpdate, onR
             </div>
           )}
 
-          {/* Channels Tab (unchanged) */}
+          {/* Channels Tab */}
           {activeTab === 'channels' && (
             <div className="h-[600px] flex flex-col space-y-4 animate-in fade-in duration-300">
               <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
@@ -532,7 +551,7 @@ export const AgentDetails: React.FC<AgentDetailsProps> = ({ agent, onUpdate, onR
             </div>
           )}
 
-          {/* Config Tab (unchanged) */}
+          {/* Config Tab */}
           {activeTab === 'config' && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
               <div className="bg-zinc-900 rounded-3xl border border-zinc-800 p-8 space-y-6 shadow-xl">
@@ -722,7 +741,7 @@ export const AgentDetails: React.FC<AgentDetailsProps> = ({ agent, onUpdate, onR
             </div>
           )}
 
-          {/* Bot Files Tab (FIXED: file upload now works) */}
+          {/* Bot Files Tab */}
           {activeTab === 'files' && (
             <div className="grid grid-cols-1 md:grid-cols-4 gap-6 h-[600px] animate-in fade-in duration-300">
               <div className="md:col-span-1 bg-zinc-900 rounded-3xl border border-zinc-800 p-4 space-y-6 flex flex-col overflow-hidden">
@@ -803,7 +822,7 @@ export const AgentDetails: React.FC<AgentDetailsProps> = ({ agent, onUpdate, onR
             </div>
           )}
 
-          {/* Logs Tab (unchanged) */}
+          {/* Logs Tab */}
           {activeTab === 'logs' && (
             <div className="bg-zinc-950 rounded-3xl border border-zinc-800 overflow-hidden flex flex-col h-[600px] shadow-2xl animate-in zoom-in duration-300">
               <div className="p-4 bg-zinc-900/50 border-b border-zinc-800 flex items-center justify-between">
@@ -824,7 +843,7 @@ export const AgentDetails: React.FC<AgentDetailsProps> = ({ agent, onUpdate, onR
             </div>
           )}
 
-          {/* Sub‑Bots Tab (unchanged) */}
+          {/* Sub‑Bots Tab */}
           {activeTab === 'subagents' && (
             <div className="bg-zinc-900 rounded-3xl border border-zinc-800 p-6 shadow-2xl">
               <h3 className="text-xs font-black uppercase tracking-widest text-emerald-500 mb-4">Sub‑Bots</h3>
@@ -869,7 +888,7 @@ export const AgentDetails: React.FC<AgentDetailsProps> = ({ agent, onUpdate, onR
             </div>
           )}
 
-          {/* Skills Tab (unchanged) */}
+          {/* Skills Tab */}
           {activeTab === 'skills' && (
             <div className="space-y-6">
               <div className="flex justify-between items-center">

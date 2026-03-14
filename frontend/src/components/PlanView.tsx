@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Icons } from '../constants';
 import { orchestratorService } from '../services/orchestratorService';
-import { useAuth } from '../contexts/AuthContext';
+import { toast } from 'react-hot-toast';
 
 interface PlanViewProps {
   hiveId: string;
@@ -11,28 +12,37 @@ interface PlanViewProps {
 export const PlanView: React.FC<PlanViewProps> = ({ hiveId, agents }) => {
   const [goal, setGoal] = useState('');
   const [planning, setPlanning] = useState(false);
-  const [tasks, setTasks] = useState<any[]>([]);
-  const [edges, setEdges] = useState<any[]>([]);
   const [goalId, setGoalId] = useState<string | null>(null);
-  // Removed assignment state
 
   const handlePlan = async () => {
     if (!goal.trim()) return;
     setPlanning(true);
     try {
       const result = await orchestratorService.createPlan(hiveId, goal);
-      setTasks(result.tasks);
-      setEdges(result.edges);
       setGoalId(result.goal_id);
+      toast.success('Plan created, tasks will be assigned automatically.');
     } catch (err) {
       console.error('Planning failed', err);
-      alert('Planning failed. Check console.');
+      toast.error('Planning failed. Check console.');
     } finally {
       setPlanning(false);
     }
   };
 
-  // No handleAssign function anymore
+  // Fetch tasks for the current goal every 2 seconds
+  const { data: tasks = [], isLoading } = useQuery({
+    queryKey: ['tasks', hiveId, goalId],
+    queryFn: async () => {
+      if (!goalId) return [];
+      const allTasks = await orchestratorService.listTasks(hiveId);
+      return allTasks.filter(t => t.goal_id === goalId);
+    },
+    enabled: !!goalId,
+    refetchInterval: 2000,
+  });
+
+  // Build a map for quick agent name lookup
+  const agentMap = Object.fromEntries(agents.map(a => [a.id, a.name]));
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
@@ -70,38 +80,40 @@ export const PlanView: React.FC<PlanViewProps> = ({ hiveId, agents }) => {
         </div>
       </div>
 
-      {tasks.length > 0 && (
+      {goalId && (
         <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 shadow-2xl">
           <h3 className="text-lg font-black text-emerald-500 mb-4">Task Graph</h3>
-          <div className="space-y-4">
-            {tasks.map(task => (
-              <div key={task.id} className="flex items-center justify-between p-4 bg-zinc-950 rounded-xl border border-zinc-800">
-                <div className="flex-1">
-                  <div className="flex items-center gap-3">
-                    <span className={`w-2 h-2 rounded-full ${
-                      task.status === 'completed' ? 'bg-emerald-500' :
-                      task.status === 'assigned' ? 'bg-blue-500' :
-                      task.status === 'running' ? 'bg-yellow-500 animate-pulse' :
-                      'bg-zinc-600'
-                    }`} />
-                    <span className="text-sm font-bold text-zinc-300">{task.description}</span>
-                  </div>
-                  <div className="text-xs text-zinc-500 mt-1">
-                    ID: {task.id} | Status: {task.status}
-                    {task.assigned_agent_id && (
-                      <span className="ml-2 text-emerald-400">
-                        Assigned to {agents.find(a => a.id === task.assigned_agent_id)?.name || task.assigned_agent_id}
-                      </span>
-                    )}
+          {isLoading ? (
+            <div className="flex justify-center py-8">
+              <div className="w-6 h-6 border-2 border-emerald-500/30 border-t-emerald-500 rounded-full animate-spin" />
+            </div>
+          ) : tasks.length === 0 ? (
+            <p className="text-zinc-500 italic">No tasks yet.</p>
+          ) : (
+            <div className="space-y-4">
+              {tasks.map(task => (
+                <div key={task.id} className="flex items-center justify-between p-4 bg-zinc-950 rounded-xl border border-zinc-800">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-3">
+                      <span className={`w-2 h-2 rounded-full ${
+                        task.status === 'completed' ? 'bg-emerald-500' :
+                        task.status === 'assigned' ? 'bg-blue-500' :
+                        task.status === 'running' ? 'bg-yellow-500 animate-pulse' :
+                        'bg-zinc-600'
+                      }`} />
+                      <span className="text-sm font-bold text-zinc-300">{task.description}</span>
+                    </div>
+                    <div className="text-xs text-zinc-500 mt-1">
+                      ID: {task.id} | Status: {task.status}
+                      {task.assigned_agent_id && (
+                        <span className="ml-2 text-emerald-400">
+                          Assigned to {agentMap[task.assigned_agent_id] || task.assigned_agent_id}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
-                {/* No dropdown – assignments are automatic */}
-              </div>
-            ))}
-          </div>
-          {edges.length > 0 && (
-            <div className="mt-6 pt-4 border-t border-zinc-800">
-              <p className="text-xs text-zinc-500 font-mono">Dependencies: {edges.map(e => `${e.from} → ${e.to}`).join(', ')}</p>
+              ))}
             </div>
           )}
         </div>

@@ -12,15 +12,22 @@ from ....models.types import ConversationMessage, HiveMindAccessLevel
 from datetime import datetime
 import secrets
 import logging
-import os
 from qdrant_client.http import models
 from sentence_transformers import SentenceTransformer
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/ai")
 
-# Load embedding model once (can be reused)
-embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
+# This log line confirms the module is imported and the router is created
+logger.info("Internal AI router loaded")
+
+# Load embedding model once at startup (module level)
+try:
+    embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
+    logger.info("Embedding model loaded successfully")
+except Exception as e:
+    logger.error(f"Failed to load embedding model: {e}")
+    embedding_model = None
 
 class GenerateDeltaRequest(BaseModel):
     agent_id: str
@@ -42,6 +49,11 @@ async def verify_internal_token(authorization: Optional[str] = Header(None)):
     if not secrets.compare_digest(token, expected):
         raise HTTPException(status_code=403, detail="Invalid token")
     return token
+
+@router.get("/ping")
+async def ping():
+    """Simple endpoint to check if the internal router is mounted."""
+    return {"status": "ok"}
 
 @router.post("/generate-delta", response_model=GenerateResponse)
 async def ai_generate_delta(
@@ -87,42 +99,41 @@ async def ai_generate_delta(
     hive_config = agent_hive.hive_mind_config
 
     # --- RAG: retrieve relevant context ---
-    query_vector = embedding_model.encode(user_input).tolist()
+    context_str = ""
+    if embedding_model is not None:
+        try:
+            query_vector = embedding_model.encode(user_input).tolist()
+            # Determine which hive_ids to search
+            search_hive_ids = [hive_id]
+            if hive_config.accessLevel == HiveMindAccessLevel.SHARED:
+                search_hive_ids.extend(hive_config.sharedHiveIds)
+            elif hive_config.accessLevel == HiveMindAccessLevel.GLOBAL:
+                search_hive_ids = [h.id for h in hives]
 
-    # Determine which hive_ids to search
-    search_hive_ids = [hive_id]
-    if hive_config.accessLevel == HiveMindAccessLevel.SHARED:
-        search_hive_ids.extend(hive_config.sharedHiveIds)
-    elif hive_config.accessLevel == HiveMindAccessLevel.GLOBAL:
-        # Get all hive ids
-        search_hive_ids = [h.id for h in hives]
-
-    # Build filter: must match hive_id in the list
-    filter_condition = models.Filter(
-        must=[
-            models.FieldCondition(
-                key="hive_id",
-                match=models.MatchAny(any=search_hive_ids)
+            filter_condition = models.Filter(
+                must=[
+                    models.FieldCondition(
+                        key="hive_id",
+                        match=models.MatchAny(any=search_hive_ids)
+                    )
+                ]
             )
-        ]
-    )
 
-    # Search vector DB
-    retrieved = await vector_service.search(query_vector, filter_condition, limit=5)
-
-    # Format retrieved context
-    context_blocks = []
-    for item in retrieved:
-        source = item.get("source", "unknown")
-        text = item.get("text", "")
-        if source == "message":
-            context_blocks.append(f"Previous conversation: {text}")
-        elif source == "file":
-            context_blocks.append(f"File excerpt: {text}")
-        else:
-            context_blocks.append(text)
-
-    context_str = "\n\n".join(context_blocks) if context_blocks else ""
+            retrieved = await vector_service.search(query_vector, filter_condition, limit=5)
+            context_blocks = []
+            for item in retrieved:
+                source = item.get("source", "unknown")
+                text = item.get("text", "")
+                if source == "message":
+                    context_blocks.append(f"Previous conversation: {text}")
+                elif source == "file":
+                    context_blocks.append(f"File excerpt: {text}")
+                else:
+                    context_blocks.append(text)
+            context_str = "\n\n".join(context_blocks) if context_blocks else ""
+        except Exception as e:
+            logger.error(f"Vector search failed: {e}")
+            context_str = ""
 
     global_user_md = agent_hive.global_user_md
 

@@ -9,6 +9,7 @@ class AgentStatus(str, Enum):
     RUNNING = "RUNNING"
     ERROR = "ERROR"
     OFFLINE = "OFFLINE"
+    ASSIGNED = "ASSIGNED"          # NEW: task assigned but not yet started
 
 class ReportingTarget(str, Enum):
     PARENT = "PARENT_AGENT"

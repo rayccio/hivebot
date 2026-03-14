@@ -7,13 +7,30 @@ import json
 
 logger = logging.getLogger(__name__)
 
+# Optional imports – gracefully handled
+try:
+    import asyncssh
+except ImportError:
+    asyncssh = None
+    logger.warning("asyncssh not installed, SSH tool will be unavailable")
+
+try:
+    from playwright.async_api import async_playwright
+except ImportError:
+    async_playwright = None
+    logger.warning("playwright not installed, browser tool will be unavailable")
+
+try:
+    import docker
+except ImportError:
+    docker = None
+    logger.warning("docker not installed, code execution tool will be unavailable")
+
+
 class ToolExecutor:
     def __init__(self, simulator_url: str = "http://simulator:8080"):
         self.simulator_url = simulator_url
-        # Real tool clients (lazy initialization)
         self._http_client: Optional[httpx.AsyncClient] = None
-        self._ssh_client = None  # would be asyncssh client pool
-        self._playwright = None   # would be playwright async api
 
     async def _get_http_client(self) -> httpx.AsyncClient:
         if not self._http_client:
@@ -56,7 +73,7 @@ class ToolExecutor:
             logger.error(f"Simulator call failed: {e}")
             return {"error": str(e), "simulated": True}
 
-    # --- Real tool implementations ---
+    # --- Real tool implementations (with availability checks) ---
 
     async def _web_search(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Perform a web search using configured API."""
@@ -64,30 +81,31 @@ class ToolExecutor:
         if not query:
             return {"error": "Missing query"}
 
-        # Use environment-configured search API (e.g., SerpAPI, Bing)
         api_key = os.getenv("SEARCH_API_KEY")
         engine = os.getenv("SEARCH_ENGINE", "google").lower()
 
-        if engine == "serpapi":
-            # Example using SerpAPI
+        if engine == "serpapi" and api_key:
             client = await self._get_http_client()
-            resp = await client.get(
-                "https://serpapi.com/search",
-                params={"q": query, "api_key": api_key, "engine": "google"}
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            # Extract organic results
-            results = []
-            for r in data.get("organic_results", []):
-                results.append({
-                    "title": r.get("title"),
-                    "link": r.get("link"),
-                    "snippet": r.get("snippet")
-                })
-            return {"results": results}
+            try:
+                resp = await client.get(
+                    "https://serpapi.com/search",
+                    params={"q": query, "api_key": api_key, "engine": "google"}
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                results = []
+                for r in data.get("organic_results", []):
+                    results.append({
+                        "title": r.get("title"),
+                        "link": r.get("link"),
+                        "snippet": r.get("snippet")
+                    })
+                return {"results": results}
+            except Exception as e:
+                logger.error(f"Web search failed: {e}")
+                return {"error": str(e)}
         else:
-            # Fallback to a simple mock
+            # Fallback mock
             return {
                 "results": [
                     {"title": f"Mock result for {query}", "url": "http://example.com", "snippet": "This is a mock result."}
@@ -96,6 +114,9 @@ class ToolExecutor:
 
     async def _ssh_execute(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Execute a command on a remote server via SSH."""
+        if asyncssh is None:
+            return {"error": "asyncssh not installed"}
+
         host = params.get("host")
         port = params.get("port", 22)
         username = params.get("username")
@@ -105,19 +126,13 @@ class ToolExecutor:
         if not all([host, username, command]):
             return {"error": "Missing required parameters"}
 
-        # Use asyncssh (needs to be installed)
-        try:
-            import asyncssh
-        except ImportError:
-            return {"error": "asyncssh not installed"}
-
         try:
             async with asyncssh.connect(
                 host=host,
                 port=port,
                 username=username,
                 password=password,
-                known_hosts=None  # In production, manage known_hosts
+                known_hosts=None
             ) as conn:
                 result = await conn.run(command, check=True)
                 return {
@@ -126,19 +141,18 @@ class ToolExecutor:
                     "exit_code": result.exit_code
                 }
         except Exception as e:
+            logger.error(f"SSH execution failed: {e}")
             return {"error": str(e)}
 
     async def _browser_action(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Perform browser automation using Playwright."""
+        if async_playwright is None:
+            return {"error": "playwright not installed"}
+
         action = params.get("action")
         url = params.get("url")
         selector = params.get("selector")
         value = params.get("value")
-
-        try:
-            from playwright.async_api import async_playwright
-        except ImportError:
-            return {"error": "playwright not installed"}
 
         p = await async_playwright().start()
         browser = await p.chromium.launch(headless=True)
@@ -161,12 +175,12 @@ class ToolExecutor:
             elif action == "screenshot":
                 await page.goto(url)
                 screenshot = await page.screenshot(full_page=True)
-                # Return base64 encoded screenshot
                 import base64
                 return {"screenshot": base64.b64encode(screenshot).decode()}
             else:
                 return {"error": f"Unknown action: {action}"}
         except Exception as e:
+            logger.error(f"Browser action failed: {e}")
             return {"error": str(e)}
         finally:
             await browser.close()
@@ -174,14 +188,11 @@ class ToolExecutor:
 
     async def _run_code(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Execute code in an isolated Docker container."""
+        if docker is None:
+            return {"error": "docker not installed"}
+
         code = params.get("code", "")
         language = params.get("language", "python").lower()
-
-        # Use Docker SDK to run a temporary container
-        try:
-            import docker
-        except ImportError:
-            return {"error": "docker not installed"}
 
         client = docker.from_env()
         image_map = {
@@ -208,13 +219,13 @@ class ToolExecutor:
                 remove=True,
                 mem_limit="128m",
                 cpu_shares=512,
-                network_disabled=True,  # no network for security
+                network_disabled=True,
                 read_only=True
             )
-            # container.run returns logs (since detach=False)
             logs = container.decode() if isinstance(container, bytes) else str(container)
             return {"stdout": logs, "stderr": ""}
         except Exception as e:
+            logger.error(f"Code execution failed: {e}")
             return {"error": str(e)}
 
     async def _api_call(self, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -252,4 +263,5 @@ class ToolExecutor:
                 "body": data
             }
         except Exception as e:
+            logger.error(f"API call failed: {e}")
             return {"error": str(e)}

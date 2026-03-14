@@ -81,6 +81,10 @@ class AgentManager:
 
         self.cache[agent_id] = agent
 
+        # --- Add the newly created agent to the Redis idle set ---
+        await redis_service.sadd("agents:idle", agent_id)
+        logger.info(f"Agent {agent_id} added to Redis idle set")
+
         if agent.parent_id and agent.parent_id in self.cache:
             parent = self.cache[agent.parent_id]
             parent.sub_agent_ids.append(agent_id)
@@ -269,6 +273,9 @@ class AgentManager:
         if channel_types:
             for ch_type in channel_types:
                 await redis_service.publish(f"config:bridge:{ch_type}", json.dumps({"agent_id": agent_id}))
+
+        # Remove from idle set if present
+        await redis_service.srem("agents:idle", agent_id)
 
         return True
 
