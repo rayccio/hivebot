@@ -1,3 +1,4 @@
+# backend/app/models/types.py
 from pydantic import BaseModel, Field, ConfigDict
 from pydantic.alias_generators import to_camel
 from typing import List, Optional, Dict, Any, Literal
@@ -302,3 +303,76 @@ class GlobalSettings(BaseModel):
     rate_limit_enabled: bool = True
     rate_limit_requests: int = 100          # 100 requests per period
     rate_limit_period_seconds: int = 60      # per 60 seconds (i.e., 1.67 req/sec)
+
+# ==================== NEW HIVE GOAL MODELS ====================
+
+class HiveGoalStatus(str, Enum):
+    CREATED = "created"
+    PLANNING = "planning"
+    EXECUTING = "executing"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+class HiveGoal(BaseModel):
+    id: str
+    hive_id: str
+    description: str
+    constraints: Dict[str, Any] = {}          # e.g., budget, max_iterations
+    success_criteria: List[str] = []
+    status: HiveGoalStatus
+    created_at: datetime
+    completed_at: Optional[datetime] = None
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+        use_enum_values=True
+    )
+
+class HiveTaskStatus(str, Enum):
+    PENDING = "pending"
+    ASSIGNED = "assigned"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    BLOCKED = "blocked"
+
+class HiveTask(BaseModel):
+    id: str
+    goal_id: str
+    description: str
+    agent_type: str                           # "builder", "tester", "reviewer", etc.
+    status: HiveTaskStatus
+    depends_on: List[str] = []                # task IDs
+    required_skills: List[str] = []
+    assigned_agent_id: Optional[str] = None
+    input_data: Dict[str, Any] = {}
+    output_data: Optional[Dict[str, Any]] = None
+    created_at: datetime
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    retries: int = 0
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+        use_enum_values=True
+    )
+
+class HiveArtifact(BaseModel):
+    id: str
+    goal_id: str
+    task_id: str
+    file_path: str
+    content: str
+    version: int = 1
+    status: str = "draft"                     # draft, tested, final
+    created_at: datetime
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+        use_enum_values=True
+    )
+
+# ==================== END NEW MODELS ====================

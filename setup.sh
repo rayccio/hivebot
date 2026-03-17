@@ -1,14 +1,15 @@
 #!/bin/bash
 set -e
 
-# HiveBot Production Installer – Absolute Zero Errors
-# Assumes the repository is already cloned and all files are in place.
-# Run from the project root (where docker-compose.yml lives).
+# HiveBot Production Installer – Phase 1
+# Run from project root.
 
 # Color codes
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
+PURPLE='\033[0;35m'
+CYAN='\033[0;36m'
 NC='\033[0m'
 
 # ASCII Art Banner
@@ -42,17 +43,15 @@ show_small_banner() {
     echo -e "${NC}"
 }
 
-
 # Auto‑elevate to root
 if [ "$EUID" -ne 0 ]; then
     echo -e "${YELLOW}🔐 This script requires root privileges. Re‑executing with sudo...${NC}"
     exec sudo "$0" "$@"
 fi
 
-# Show main banner
 show_banner
 
-echo -e "${GREEN}🚀 HiveBot Production Installer (Zero Errors)${NC}"
+echo -e "${GREEN}🚀 HiveBot Production Installer (Phase 1)${NC}"
 echo "----------------------------------------"
 
 # --- 1. Check prerequisites ---
@@ -106,7 +105,7 @@ else
     URL_IP="${PUBLIC_IP}"
 fi
 
-# --- 3. Create required directories (if not exist) ---
+# --- 3. Create required directories ---
 echo -e "${YELLOW}📁 Ensuring directory structure...${NC}"
 mkdir -p ./agents
 mkdir -p ./logs
@@ -368,10 +367,11 @@ $COMPOSE_CMD build --no-cache bridge-telegram
 echo -e "${YELLOW}🐳 Building remaining Docker images (with no-cache)...${NC}"
 $COMPOSE_CMD build --no-cache
 
+# --- 10. Start services ---
 echo -e "${YELLOW}🐳 Starting Docker services...${NC}"
 $COMPOSE_CMD up -d
 
-# --- 10. Wait for backend to be healthy ---
+# --- 11. Wait for backend to be healthy ---
 echo -e "${YELLOW}⏳ Waiting for backend to become healthy...${NC}"
 for i in {1..30}; do
     if docker inspect --format='{{json .State.Health.Status}}' hivebot_backend 2>/dev/null | grep -q '"healthy"'; then
@@ -382,35 +382,17 @@ for i in {1..30}; do
     sleep 2
 done
 
-# --- 11. Run database migrations (if any) ---
+# --- 12. Run database migrations (including new tables) ---
 echo -e "${YELLOW}📦 Running database migrations...${NC}"
-docker exec hivebot_backend python -c "
-import asyncio
-import logging
-logging.basicConfig(level=logging.ERROR)
-from app.core.database import engine, Base
-from app.models import db_models
+docker exec hivebot_backend python /app/scripts/create_goal_tables.py || echo -e "${RED}❌ Migration failed, but continuing...${NC}"
 
-async def create_tables():
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    print('✅ Tables created')
-
-asyncio.run(create_tables())
-" || echo -e "${RED}❌ Migration failed, but continuing...${NC}"
-
-# --- 12. Seed evaluation tasks ---
-echo -e "${YELLOW}🌱 Seeding evaluation tasks...${NC}"
+# (Optional) Run other existing migrations if any
 docker exec hivebot_backend python /app/scripts/seed_eval_tasks.py || echo -e "${RED}❌ Seeding failed, but continuing...${NC}"
 
-# --- 13. Create skill suggestions table ---
-echo -e "${YELLOW}🔧 Creating skill suggestions table...${NC}"
-docker exec hivebot_backend python /app/scripts/create_skill_suggestions_table.py || echo -e "${RED}❌ Skill suggestions table creation failed, but continuing...${NC}"
-
-# --- 14. Final status ---
+# --- 13. Final status ---
 clear
 show_small_banner
-echo -e "${GREEN}✅ HiveBot is now running!${NC}"
+echo -e "${GREEN}✅ HiveBot Phase 1 is now running!${NC}"
 echo -e "   Frontend: http://${URL_IP}:8080"
 echo -e "   Backend API: http://${URL_IP}:8000"
 echo -e "   Secrets: $(pwd)/secrets"
