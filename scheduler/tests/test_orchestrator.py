@@ -13,10 +13,13 @@ from scheduler.main import are_dependencies_met
 @pytest.mark.asyncio
 async def test_are_dependencies_met_true():
     mock_pg = AsyncMock()
-    # Create a mock connection
     mock_conn = AsyncMock()
-    # Make acquire return the mock connection as an async context manager
-    mock_pg.acquire.return_value.__aenter__.return_value = mock_conn
+    # Make acquire return the connection when awaited
+    mock_pg.acquire = AsyncMock(return_value=mock_conn)
+    # Make the connection itself an async context manager
+    mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)
+    mock_conn.__aexit__ = AsyncMock(return_value=None)
+
     # Mock fetch to return rows with completed status
     async def mock_fetch(query, *args):
         return [{'data': json.dumps({'status': 'completed'})}]
@@ -29,7 +32,9 @@ async def test_are_dependencies_met_true():
 async def test_are_dependencies_met_false():
     mock_pg = AsyncMock()
     mock_conn = AsyncMock()
-    mock_pg.acquire.return_value.__aenter__.return_value = mock_conn
+    mock_pg.acquire = AsyncMock(return_value=mock_conn)
+    mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)
+    mock_conn.__aexit__ = AsyncMock(return_value=None)
 
     async def mock_fetch(query, *args):
         # Simulate that one dependency is not completed
