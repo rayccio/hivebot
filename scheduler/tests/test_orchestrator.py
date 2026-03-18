@@ -12,13 +12,13 @@ from scheduler.main import are_dependencies_met
 
 @pytest.mark.asyncio
 async def test_are_dependencies_met_true():
-    mock_pg = AsyncMock()
+    mock_pg = MagicMock()
     mock_conn = AsyncMock()
-    # Make acquire return the connection when awaited
-    mock_pg.acquire = AsyncMock(return_value=mock_conn)
-    # Make the connection itself an async context manager
-    mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)
-    mock_conn.__aexit__ = AsyncMock(return_value=None)
+    # Create a mock context manager that acquire() returns
+    mock_cm = MagicMock()
+    mock_cm.__aenter__ = AsyncMock(return_value=mock_conn)
+    mock_cm.__aexit__ = AsyncMock(return_value=None)
+    mock_pg.acquire = MagicMock(return_value=mock_cm)
 
     # Mock fetch to return rows with completed status
     async def mock_fetch(query, *args):
@@ -30,11 +30,12 @@ async def test_are_dependencies_met_true():
 
 @pytest.mark.asyncio
 async def test_are_dependencies_met_false():
-    mock_pg = AsyncMock()
+    mock_pg = MagicMock()
     mock_conn = AsyncMock()
-    mock_pg.acquire = AsyncMock(return_value=mock_conn)
-    mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)
-    mock_conn.__aexit__ = AsyncMock(return_value=None)
+    mock_cm = MagicMock()
+    mock_cm.__aenter__ = AsyncMock(return_value=mock_conn)
+    mock_cm.__aexit__ = AsyncMock(return_value=None)
+    mock_pg.acquire = MagicMock(return_value=mock_cm)
 
     async def mock_fetch(query, *args):
         # Simulate that one dependency is not completed
