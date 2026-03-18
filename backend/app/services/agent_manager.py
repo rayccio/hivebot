@@ -19,7 +19,7 @@ from ..constants import (
 )
 from .hive_manager import HiveManager
 from .skill_manager import SkillManager
-from .vector_service import vector_service  # <-- already imported
+from .vector_service import vector_service
 import uuid
 import shutil
 import logging
@@ -331,6 +331,9 @@ class AgentManager:
         # Remove from idle set if present
         await redis_service.srem("agents:idle", agent_id)
 
+        # Delete all vectors (including memories) for this agent
+        await vector_service.delete_by_agent(agent_id)
+
         return True
 
     async def execute_agent(self, agent_id: str, input_text: str = "", simulation: bool = False) -> bool:
@@ -380,7 +383,7 @@ class AgentManager:
     async def update_agent_skill_config(self, agent_id: str, skill_id: str, config: dict) -> Optional[Agent]:
         return None
 
-    # --- NEW: Spawn agent for a task with role ---
+    # --- Spawn agent for a task with role ---
     async def spawn_agent_for_task(self, hive_id: str, required_skill_ids: List[str], agent_type: str) -> Optional[Agent]:
         """Create a new agent with the required role and skills, and add it to the hive."""
         skill_manager = SkillManager()
@@ -432,10 +435,32 @@ class AgentManager:
         logger.info(f"Spawned agent {agent.id} (role {role.value}) for hive {hive_id} with skills {required_skill_ids}")
         return agent
 
-    # ==================== NEW: Long‑Term Memory Retrieval ====================
+    # ==================== LONG‑TERM MEMORY METHODS ====================
+
+    async def store_long_term_memory(self, agent_id: str, text: str, timestamp: Optional[datetime] = None) -> bool:
+        """
+        Store a piece of long‑term memory (e.g., a summary) for an agent.
+        Returns True on success, False on failure.
+        """
+        try:
+            from sentence_transformers import SentenceTransformer
+            model = SentenceTransformer("all-MiniLM-L6-v2")
+            vector = model.encode(text).tolist()
+            await vector_service.store_memory(
+                agent_id=agent_id,
+                text=text,
+                vector=vector,
+                timestamp=(timestamp or datetime.utcnow()).isoformat(),
+                source="memory"
+            )
+            logger.debug(f"Stored long‑term memory for agent {agent_id}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to store long‑term memory for agent {agent_id}: {e}")
+            return False
+
     async def get_long_term_memory(self, agent_id: str, query: str, limit: int = 5) -> List[str]:
         """Retrieve relevant long‑term memories for an agent based on a query."""
-        # vector_service is already imported at module level
         from sentence_transformers import SentenceTransformer
         try:
             model = SentenceTransformer("all-MiniLM-L6-v2")

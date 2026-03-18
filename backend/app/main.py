@@ -23,6 +23,7 @@ import asyncio
 import json
 import litellm
 import secrets as pysecrets
+from datetime import datetime
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -315,16 +316,12 @@ Provide a concise summary (max 100 words) that captures the key points and conte
                         await agent_manager.update_agent(agent.id, AgentUpdate(memory=agent.memory))
                         logger.info(f"Summarized memory for agent {agent.id}")
 
-                        # --- NEW: Store summary in long‑term memory ---
+                        # --- Store summary in long‑term memory ---
                         try:
-                            embed_model = SentenceTransformer("all-MiniLM-L6-v2")
-                            vector = embed_model.encode(response).tolist()
-                            await vector_service.store_memory(
+                            await agent_manager.store_long_term_memory(
                                 agent_id=agent.id,
                                 text=response,
-                                vector=vector,
-                                timestamp=datetime.utcnow().isoformat(),
-                                source="summary"
+                                timestamp=datetime.utcnow()
                             )
                             logger.info(f"Stored summary in long‑term memory for agent {agent.id}")
                         except Exception as e:
