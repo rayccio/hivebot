@@ -13,7 +13,7 @@ import { orchestratorService } from '../services/orchestratorService';
 import { MetaBotsDashboard } from './MetaBotsDashboard';
 import { SkillSuggestions } from './SkillSuggestions';
 
-// ---------- User Modal (unchanged) ----------
+// ---------- User Modal ----------
 interface UserModalProps {
   user?: UserAccount;
   hives: Hive[];
@@ -65,10 +65,106 @@ const UserModal: React.FC<UserModalProps> = ({ user, hives, onClose, onSave }) =
     }
   };
 
-  return ( /* JSX unchanged - omitted for brevity, but keep the same */ );
+  return (
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+      <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-8 w-full max-w-md space-y-6 shadow-2xl animate-in zoom-in-95 duration-200">
+        <div className="flex items-center justify-between">
+          <h3 className="text-xl font-black uppercase tracking-tighter">{user ? 'Edit User' : 'Create User'}</h3>
+          <button onClick={onClose} className="text-zinc-500 hover:text-white transition-colors"><Icons.X /></button>
+        </div>
+
+        <div className="space-y-4">
+          <div>
+            <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-2">Username</label>
+            <input 
+              type="text" 
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-200 focus:border-emerald-500 outline-none transition-all"
+              placeholder="Enter username"
+              disabled={loading}
+            />
+          </div>
+
+          <div>
+            <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-2">Password</label>
+            <input 
+              type="password" 
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-200 focus:border-emerald-500 outline-none transition-all"
+              placeholder={user ? "Leave blank to keep current" : "Enter password"}
+              disabled={loading}
+            />
+          </div>
+
+          <div>
+            <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-2">Role</label>
+            <select 
+              value={role}
+              onChange={(e) => setRole(e.target.value as UserRole)}
+              className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-200 focus:border-emerald-500 outline-none transition-all appearance-none"
+              disabled={loading}
+            >
+              <option value={UserRole.GLOBAL_ADMIN}>Global Admin</option>
+              <option value={UserRole.HIVE_ADMIN}>Hive Admin</option>
+              <option value={UserRole.HIVE_USER}>Hive User</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-2">Assigned Hives</label>
+            <div className="space-y-2 max-h-40 overflow-y-auto p-2 bg-zinc-950 border border-zinc-800 rounded-xl">
+              {hives.length === 0 ? (
+                <p className="text-zinc-500 text-xs italic">No hives available</p>
+              ) : (
+                hives.map(h => (
+                  <button
+                    key={h.id}
+                    onClick={() => handleToggleHive(h.id)}
+                    className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs transition-all ${
+                      assignedHiveIds.includes(h.id) ? 'bg-emerald-500/10 text-emerald-400' : 'text-zinc-500 hover:bg-zinc-900'
+                    }`}
+                    disabled={loading}
+                  >
+                    <span>{h.name}</span>
+                    {assignedHiveIds.includes(h.id) && <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />}
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex gap-3 pt-4">
+          <button 
+            onClick={onClose}
+            className="flex-1 px-4 py-3 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all"
+            disabled={loading}
+          >
+            Cancel
+          </button>
+          <button 
+            onClick={handleSubmit}
+            disabled={loading}
+            className="flex-1 px-4 py-3 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg shadow-emerald-900/20 flex items-center justify-center gap-2"
+          >
+            {loading ? (
+              <>
+                <LoadingSpinner size="sm" />
+                <span>Saving...</span>
+              </>
+            ) : (
+              'Save User'
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 };
 
-// ---------- Skill Modal (unchanged) ----------
+// ---------- Skill Modal ----------
 interface SkillModalProps {
   skill?: Skill;
   onClose: () => void;
@@ -76,11 +172,167 @@ interface SkillModalProps {
 }
 
 const SkillModal: React.FC<SkillModalProps> = ({ skill, onClose, onSave }) => {
-  // ... unchanged
-  return ( /* JSX unchanged */ );
+  const [name, setName] = useState(skill?.name || '');
+  const [description, setDescription] = useState(skill?.description || '');
+  const [type, setType] = useState<SkillType>(skill?.type || SkillType.TOOL);
+  const [visibility, setVisibility] = useState<SkillVisibility>(skill?.visibility || SkillVisibility.PRIVATE);
+  const [tags, setTags] = useState<string>((skill?.tags || []).join(', '));
+  const [icon, setIcon] = useState(skill?.icon || '');
+  const [metadata, setMetadata] = useState(JSON.stringify(skill?.metadata || {}, null, 2));
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleSubmit = async () => {
+    if (!name.trim()) {
+      setError('Name is required');
+      return;
+    }
+    setLoading(true);
+    setError('');
+    try {
+      let parsedMetadata = {};
+      try {
+        parsedMetadata = metadata ? JSON.parse(metadata) : {};
+      } catch (e) {
+        setError('Invalid JSON in metadata');
+        setLoading(false);
+        return;
+      }
+      await onSave({
+        name,
+        description,
+        type,
+        visibility,
+        tags: tags.split(',').map(t => t.trim()).filter(t => t),
+        icon: icon || undefined,
+        metadata: parsedMetadata,
+      });
+    } catch (err: any) {
+      setError(err.message || 'Failed to save skill');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+      <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-8 w-full max-w-2xl space-y-6 shadow-2xl animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between">
+          <h3 className="text-xl font-black uppercase tracking-tighter">{skill ? 'Edit Skill' : 'Create Skill'}</h3>
+          <button onClick={onClose} className="text-zinc-500 hover:text-white transition-colors"><Icons.X /></button>
+        </div>
+
+        <div className="space-y-4">
+          <div>
+            <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-2">Name</label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-200 focus:border-emerald-500 outline-none"
+              placeholder="e.g., Web Search"
+            />
+          </div>
+
+          <div>
+            <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-2">Description</label>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={3}
+              className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-200 focus:border-emerald-500 outline-none"
+              placeholder="What this skill does..."
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-2">Type</label>
+              <select
+                value={type}
+                onChange={(e) => setType(e.target.value as SkillType)}
+                className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-200 focus:border-emerald-500 outline-none"
+              >
+                {Object.values(SkillType).map(t => (
+                  <option key={t} value={t}>{t}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-2">Visibility</label>
+              <select
+                value={visibility}
+                onChange={(e) => setVisibility(e.target.value as SkillVisibility)}
+                className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-200 focus:border-emerald-500 outline-none"
+              >
+                {Object.values(SkillVisibility).map(v => (
+                  <option key={v} value={v}>{v}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-2">Tags (comma separated)</label>
+            <input
+              type="text"
+              value={tags}
+              onChange={(e) => setTags(e.target.value)}
+              className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-200 focus:border-emerald-500 outline-none"
+              placeholder="web, search, api"
+            />
+          </div>
+
+          <div>
+            <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-2">Icon (optional)</label>
+            <input
+              type="text"
+              value={icon}
+              onChange={(e) => setIcon(e.target.value)}
+              className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-200 focus:border-emerald-500 outline-none"
+              placeholder="🔍 or emoji"
+            />
+          </div>
+
+          <div>
+            <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-2">Metadata (JSON)</label>
+            <textarea
+              value={metadata}
+              onChange={(e) => setMetadata(e.target.value)}
+              rows={5}
+              className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-sm font-mono text-zinc-200 focus:border-emerald-500 outline-none"
+              placeholder='{ "version": "1.0", "author": "..." }'
+            />
+          </div>
+
+          {error && (
+            <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-[10px] font-black uppercase tracking-widest text-center">
+              {error}
+            </div>
+          )}
+        </div>
+
+        <div className="flex gap-3 pt-4">
+          <button
+            onClick={onClose}
+            className="flex-1 px-4 py-3 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSubmit}
+            disabled={loading}
+            className="flex-1 px-4 py-3 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg shadow-emerald-900/20 flex items-center justify-center gap-2"
+          >
+            {loading ? <LoadingSpinner size="sm" /> : skill ? 'Update' : 'Create'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 };
 
-// ---------- Version Modal (unchanged) ----------
+// ---------- Version Modal ----------
 interface VersionModalProps {
   skillId: string;
   onClose: () => void;
@@ -88,8 +340,181 @@ interface VersionModalProps {
 }
 
 const VersionModal: React.FC<VersionModalProps> = ({ skillId, onClose, onVersionAdded }) => {
-  // ... unchanged
-  return ( /* JSX unchanged */ );
+  const [version, setVersion] = useState('');
+  const [code, setCode] = useState('');
+  const [language, setLanguage] = useState('python');
+  const [entryPoint, setEntryPoint] = useState('run');
+  const [requirements, setRequirements] = useState('');
+  const [configSchema, setConfigSchema] = useState('');
+  const [changelog, setChangelog] = useState('');
+  const [isActive, setIsActive] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleSubmit = async () => {
+    if (!version.trim() || !code.trim()) {
+      setError('Version and code are required');
+      return;
+    }
+    setLoading(true);
+    setError('');
+    try {
+      let parsedSchema = {};
+      if (configSchema.trim()) {
+        try {
+          parsedSchema = JSON.parse(configSchema);
+        } catch (e) {
+          setError('Invalid JSON in config schema');
+          setLoading(false);
+          return;
+        }
+      }
+      await orchestratorService.createSkillVersion(skillId, {
+        version,
+        code,
+        language,
+        entryPoint,
+        requirements: requirements.split('\n').map(r => r.trim()).filter(r => r),
+        configSchema: parsedSchema,
+        isActive,
+        changelog: changelog || undefined,
+      });
+      onVersionAdded();
+      onClose();
+    } catch (err: any) {
+      setError(err.message || 'Failed to create version');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+      <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-8 w-full max-w-3xl space-y-6 shadow-2xl animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between">
+          <h3 className="text-xl font-black uppercase tracking-tighter">Add New Version</h3>
+          <button onClick={onClose} className="text-zinc-500 hover:text-white transition-colors"><Icons.X /></button>
+        </div>
+
+        <div className="space-y-4">
+          <div>
+            <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-2">Version Tag</label>
+            <input
+              type="text"
+              value={version}
+              onChange={(e) => setVersion(e.target.value)}
+              className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-200 focus:border-emerald-500 outline-none"
+              placeholder="e.g., 1.0.0"
+            />
+          </div>
+
+          <div>
+            <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-2">Code</label>
+            <textarea
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              rows={10}
+              className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-sm font-mono text-zinc-200 focus:border-emerald-500 outline-none"
+              placeholder="def run(input, config): ..."
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-2">Language</label>
+              <input
+                type="text"
+                value={language}
+                onChange={(e) => setLanguage(e.target.value)}
+                className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-200 focus:border-emerald-500 outline-none"
+                placeholder="python"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-2">Entry Point</label>
+              <input
+                type="text"
+                value={entryPoint}
+                onChange={(e) => setEntryPoint(e.target.value)}
+                className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-200 focus:border-emerald-500 outline-none"
+                placeholder="run"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-2">Requirements (one per line)</label>
+            <textarea
+              value={requirements}
+              onChange={(e) => setRequirements(e.target.value)}
+              rows={3}
+              className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-sm font-mono text-zinc-200 focus:border-emerald-500 outline-none"
+              placeholder="requests==2.28.1\nbeautifulsoup4==4.12.0"
+            />
+          </div>
+
+          <div>
+            <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-2">Config Schema (JSON)</label>
+            <textarea
+              value={configSchema}
+              onChange={(e) => setConfigSchema(e.target.value)}
+              rows={3}
+              className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-sm font-mono text-zinc-200 focus:border-emerald-500 outline-none"
+              placeholder='{ "apiKey": { "type": "string", "description": "API key" } }'
+            />
+          </div>
+
+          <div>
+            <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-2">Changelog</label>
+            <textarea
+              value={changelog}
+              onChange={(e) => setChangelog(e.target.value)}
+              rows={2}
+              className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-200 focus:border-emerald-500 outline-none"
+              placeholder="Added new feature..."
+            />
+          </div>
+
+          <div className="flex items-center gap-3">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={isActive}
+                onChange={(e) => setIsActive(e.target.checked)}
+                className="sr-only peer"
+              />
+              <div className="w-10 h-5 bg-zinc-800 rounded-full peer-checked:bg-emerald-600 transition-all relative">
+                <div className="absolute top-1 w-3 h-3 bg-white rounded-full transition-all peer-checked:left-6 left-1"></div>
+              </div>
+              <span className="text-xs text-zinc-400">Active (default version)</span>
+            </label>
+          </div>
+
+          {error && (
+            <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-[10px] font-black uppercase tracking-widest text-center">
+              {error}
+            </div>
+          )}
+        </div>
+
+        <div className="flex gap-3 pt-4">
+          <button
+            onClick={onClose}
+            className="flex-1 px-4 py-3 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSubmit}
+            disabled={loading}
+            className="flex-1 px-4 py-3 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg shadow-emerald-900/20 flex items-center justify-center gap-2"
+          >
+            {loading ? <LoadingSpinner size="sm" /> : 'Add Version'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 };
 
 // ---------- Main GlobalConfig ----------
@@ -344,7 +769,7 @@ export const GlobalConfig: React.FC<GlobalConfigProps> = ({
 
   return (
     <div className="flex flex-col h-full animate-in fade-in duration-500">
-      {/* Global Config Top Nav (unchanged) */}
+      {/* Global Config Top Nav */}
       <div className="flex items-center justify-between mb-8 pb-4 border-b border-zinc-800">
         <div className="flex items-center gap-6">
           <button 
@@ -433,7 +858,67 @@ export const GlobalConfig: React.FC<GlobalConfigProps> = ({
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {users.map(user => (
                   <div key={user.id} className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 relative group hover:border-emerald-500/30 transition-all">
-                    {/* user card JSX unchanged */}
+                    <div className="flex items-center gap-4 mb-4">
+                      <div className="w-12 h-12 bg-zinc-800 rounded-2xl flex items-center justify-center text-zinc-400">
+                        <Icons.User />
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-zinc-200">{user.username}</h4>
+                        <span className={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-widest ${
+                          user.role === UserRole.GLOBAL_ADMIN ? 'bg-purple-500/10 text-purple-400' :
+                          user.role === UserRole.HIVE_ADMIN ? 'bg-blue-500/10 text-blue-400' :
+                          'bg-zinc-500/10 text-zinc-400'
+                        }`}>
+                          {user.role.replace('_', ' ')}
+                        </span>
+                      </div>
+                    </div>
+                    
+                    <div className="space-y-3 pt-4 border-t border-zinc-800/50">
+                      <div>
+                        <p className="text-[9px] font-black text-zinc-500 uppercase tracking-widest mb-1">Assigned Hives</p>
+                        <div className="flex flex-wrap gap-1">
+                          {user.assignedHiveIds.length > 0 ? (
+                            user.assignedHiveIds.map(pid => {
+                              const h = hives.find(h => h.id === pid);
+                              return (
+                                <span key={pid} className="px-1.5 py-0.5 bg-zinc-800 text-zinc-400 rounded text-[9px] font-bold">
+                                  {h?.name || pid}
+                                </span>
+                              );
+                            })
+                          ) : (
+                            <span className="text-[9px] text-zinc-600 italic">No access</span>
+                          )}
+                        </div>
+                      </div>
+                      
+                      <div className="flex justify-between text-[10px]">
+                        <span className="text-zinc-500 uppercase font-bold">Created</span>
+                        <span className="text-zinc-400 font-mono">
+                          {user.createdAt ? new Date(user.createdAt).toLocaleDateString() : 'N/A'}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="absolute top-4 right-4 flex gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                      <button 
+                        onClick={() => setEditingUser(user)}
+                        className="p-2 text-zinc-600 hover:text-white hover:bg-zinc-800 rounded-lg"
+                        title="Edit User"
+                      >
+                        <Icons.Settings />
+                      </button>
+                      {user.id !== currentUser.id && (
+                        <button 
+                          onClick={() => handleDeleteUser(user.id)}
+                          className="p-2 text-zinc-600 hover:text-red-400 hover:bg-red-500/10 rounded-lg"
+                          title="Delete User"
+                        >
+                          <Icons.Trash />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
