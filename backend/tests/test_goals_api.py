@@ -43,8 +43,8 @@ async def test_create_goal_api(client: AsyncClient):
     fastapi_app.dependency_overrides[get_planner] = lambda: mock_planner
     fastapi_app.dependency_overrides[get_hive_manager] = lambda: mock_hive_manager
 
-    # Patch SkillManager directly (no dependency function)
-    with patch('app.api.v1.endpoints.goals.SkillManager') as MockSkillManager:
+    # Patch SkillManager at its original location (class in service module)
+    with patch('app.services.skill_manager.SkillManager') as MockSkillManager:
         mock_skill_manager = AsyncMock()
         mock_skill_manager.list_skills = AsyncMock(return_value=[])
         MockSkillManager.return_value = mock_skill_manager
