@@ -100,7 +100,7 @@ async def fetch_tasks_for_goal(pg_pool, goal_id):
     """Fetch all tasks for a goal."""
     async with pg_pool.acquire() as conn:
         rows = await conn.fetch(
-            "SELECT data FROM tasks WHERE data->>'goal_id' = $1",
+            "SELECT data FROM tasks WHERE data->>'goalId' = $1",   # <-- corrected key
             goal_id
         )
         tasks = []
@@ -116,7 +116,7 @@ async def fetch_task_edges(pg_pool, goal_id):
     # Get all task IDs for this goal
     async with pg_pool.acquire() as conn:
         task_ids = await conn.fetch(
-            "SELECT id FROM tasks WHERE data->>'goal_id' = $1",
+            "SELECT id FROM tasks WHERE data->>'goalId' = $1",   # <-- corrected key
             goal_id
         )
         task_ids = [t['id'] for t in task_ids]
@@ -251,7 +251,7 @@ async def handle_task_completion(pg_pool, redis_client, goal_id, task_id, output
     async with pg_pool.acquire() as conn:
         # Get all tasks for this goal
         rows = await conn.fetch(
-            "SELECT data FROM tasks WHERE data->>'goal_id' = $1",
+            "SELECT data FROM tasks WHERE data->>'goalId' = $1",   # <-- corrected key
             goal_id
         )
         all_tasks = []
