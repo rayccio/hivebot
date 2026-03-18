@@ -37,21 +37,18 @@ async def test_create_goal_api(client: AsyncClient):
     mock_hive.global_user_md = "context"
     mock_hive_manager.get_hive.return_value = mock_hive
 
-    # Mock SkillManager
-    mock_skill_manager = AsyncMock()
-    mock_skill_manager.list_skills = AsyncMock(return_value=[])
-    async def mock_get_skill_manager():
-        return mock_skill_manager
-
-    # Apply dependency overrides
-    fastapi_app.dependency_overrides.clear()  # start fresh
-    from app.api.v1.endpoints.goals import get_goal_engine, get_planner, get_hive_manager, get_skill_manager
+    # Apply dependency overrides for the functions that exist
+    from app.api.v1.endpoints.goals import get_goal_engine, get_planner, get_hive_manager
     fastapi_app.dependency_overrides[get_goal_engine] = lambda: mock_goal_engine
     fastapi_app.dependency_overrides[get_planner] = lambda: mock_planner
     fastapi_app.dependency_overrides[get_hive_manager] = lambda: mock_hive_manager
-    fastapi_app.dependency_overrides[get_skill_manager] = mock_get_skill_manager
 
-    try:
+    # Patch SkillManager directly (no dependency function)
+    with patch('app.api.v1.endpoints.goals.SkillManager') as MockSkillManager:
+        mock_skill_manager = AsyncMock()
+        mock_skill_manager.list_skills = AsyncMock(return_value=[])
+        MockSkillManager.return_value = mock_skill_manager
+
         payload = {
             "description": "Test goal",
             "constraints": {},
@@ -63,8 +60,8 @@ async def test_create_goal_api(client: AsyncClient):
         assert data["goal"]["id"] == "g-test"
         assert len(data["tasks"]) == 1
         assert data["tasks"][0]["id"] == "t-test"
-    finally:
-        fastapi_app.dependency_overrides.clear()
+
+    fastapi_app.dependency_overrides.clear()
 
 @pytest.mark.asyncio
 async def test_list_goals(client: AsyncClient):
@@ -85,11 +82,10 @@ async def test_list_goals(client: AsyncClient):
     from app.api.v1.endpoints.goals import get_goal_engine
     fastapi_app.dependency_overrides[get_goal_engine] = lambda: mock_goal_engine
 
-    try:
-        response = await client.get("/api/v1/hives/h-test/goals")
-        assert response.status_code == 200
-        data = response.json()
-        assert len(data) == 1
-        assert data[0]["id"] == "g1"
-    finally:
-        fastapi_app.dependency_overrides.clear()
+    response = await client.get("/api/v1/hives/h-test/goals")
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data) == 1
+    assert data[0]["id"] == "g1"
+
+    fastapi_app.dependency_overrides.clear()
