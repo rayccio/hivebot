@@ -6,17 +6,12 @@ import { INITIAL_SOUL, INITIAL_IDENTITY, INITIAL_TOOLS, INITIAL_USER_MD, Icons }
 import { Sidebar } from './components/Sidebar';
 import { AgentGrid } from './components/AgentGrid';
 import { AgentDetails } from './components/AgentDetails';
-import { GlobalStats } from './components/GlobalStats';
-import { HiveFiles } from './components/HiveFiles';
-import { AIProviderConfig } from './components/AIProviderConfig';
-import { PublicUrlConfig } from './components/PublicUrlConfig';
-import { BridgeManager } from './components/BridgeManager';
-import { Dashboard } from './components/Dashboard';
 import { HiveBrain } from './components/HiveBrain';
 import { HiveMindDashboard } from './components/HiveMindDashboard';
 import { GlobalConfig } from './components/GlobalConfig';
 import { HiveTeam } from './components/HiveTeam';
 import { HiveContext } from './components/HiveContext';
+import { HiveCommand } from './components/HiveCommand';
 import { LoginPage } from './components/LoginPage';
 import { UnauthorizedPage } from './components/UnauthorizedPage';
 import { ChangePasswordModal } from './components/ChangePasswordModal';
@@ -26,7 +21,6 @@ import { ProtectedRoute } from './components/ProtectedRoute';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ProviderProvider, useProviders } from './contexts/ProviderContext';
 import { BridgeProvider } from './contexts/BridgeContext';
-import { PlanView } from './components/PlanView';
 import { orchestratorService } from './services/orchestratorService';
 import { wsService } from './services/websocketService';
 import { toast } from 'react-hot-toast';
@@ -70,7 +64,8 @@ const AppContent: React.FC = () => {
     rateLimitPeriodSeconds: 60
   });
 
-  const [view, setView] = useState<'dashboard' | 'cluster' | 'agent' | 'context' | 'brain' | 'plan' | 'global-config' | 'team'>('dashboard');
+  // Updated view names: 'command' replaces 'dashboard' and 'plan'
+  const [view, setView] = useState<'command' | 'cluster' | 'agent' | 'context' | 'brain' | 'team' | 'global-config'>('command');
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
@@ -162,6 +157,7 @@ const AppContent: React.FC = () => {
           setActiveHiveId(savedActive);
         } else {
           setActiveHiveId(hivesData[0].id);
+          setView('command'); // default to command view
         }
 
         // Refresh providers in the background (non‑critical)
@@ -384,7 +380,7 @@ const AppContent: React.FC = () => {
       });
       setHives(prev => [...prev, newHive]);
       setActiveHiveId(newHive.id);
-      setView('dashboard');
+      setView('command'); // default to command
       setSelectedAgentId(null);
       setIsSidebarOpen(false);
     } catch (err) {
@@ -472,7 +468,7 @@ const AppContent: React.FC = () => {
 
   const handleSelectHive = (id: string) => {
     setActiveHiveId(id);
-    setView('dashboard');
+    setView('command'); // go to command
     setSelectedAgentId(null);
     setIsSidebarOpen(false);
   };
@@ -634,7 +630,7 @@ const AppContent: React.FC = () => {
 
         <main className="flex-1 flex flex-col overflow-hidden relative">
           {/* Header - only show when not in global-config */}
-          {view !== 'global-config' && ['dashboard', 'cluster', 'agent', 'context', 'brain', 'plan', 'team'].includes(view) && (
+          {view !== 'global-config' && ['command', 'cluster', 'agent', 'context', 'brain', 'team'].includes(view) && (
             <header className="h-16 border-b border-zinc-800 flex items-center justify-between px-4 md:px-8 bg-zinc-950/90 backdrop-blur-md sticky top-0 z-20">
               <div className="flex items-center gap-3 md:gap-4">
                 <button onClick={() => setIsSidebarOpen(true)} className="lg:hidden p-2 text-zinc-400 hover:text-white transition-colors">
@@ -647,10 +643,9 @@ const AppContent: React.FC = () => {
               <div className="flex items-center gap-2 md:gap-6">
                 {/* Hive navigation */}
                 <div className="hidden lg:flex bg-zinc-900 p-1 rounded-2xl border border-zinc-800 shadow-inner">
-                  <button onClick={() => setView('dashboard')} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${view === 'dashboard' ? 'bg-zinc-800 text-emerald-400 shadow-xl' : 'text-zinc-500 hover:text-zinc-300'}`}>Dashboard</button>
+                  <button onClick={() => setView('command')} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${view === 'command' ? 'bg-zinc-800 text-emerald-400 shadow-xl' : 'text-zinc-500 hover:text-zinc-300'}`}>Command</button>
                   <button onClick={() => setView('cluster')} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${view === 'cluster' ? 'bg-zinc-800 text-emerald-400 shadow-xl' : 'text-zinc-500 hover:text-zinc-300'}`}>Bots</button>
                   <button onClick={() => setView('brain')} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${view === 'brain' ? 'bg-zinc-800 text-emerald-400 shadow-xl' : 'text-zinc-500 hover:text-zinc-300'}`}>Brain</button>
-                  <button onClick={() => setView('plan')} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${view === 'plan' ? 'bg-zinc-800 text-emerald-400 shadow-xl' : 'text-zinc-500 hover:text-zinc-300'}`}>Plan</button>
                   <button onClick={() => setView('team')} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${view === 'team' ? 'bg-zinc-800 text-emerald-400 shadow-xl' : 'text-zinc-500 hover:text-zinc-300'}`}>Team</button>
                   <button onClick={() => setView('context')} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${view === 'context' ? 'bg-zinc-800 text-emerald-400 shadow-xl' : 'text-zinc-500 hover:text-zinc-300'}`}>Context</button>
                 </div>
@@ -672,7 +667,7 @@ const AppContent: React.FC = () => {
             </header>
           )}
 
-          {/* Global Config header - shown only in global-config view */}
+          {/* Global Config header */}
           {view === 'global-config' && (
             <header className="h-16 border-b border-zinc-800 flex items-center justify-between px-4 md:px-8 bg-zinc-950/90 backdrop-blur-md sticky top-0 z-20">
               <div className="flex items-center gap-3 md:gap-4">
@@ -684,11 +679,8 @@ const AppContent: React.FC = () => {
               </div>
               
               <div className="flex items-center gap-2 md:gap-6">
-                {/* No buttons here; GlobalConfig has its own internal navigation */}
-                
                 <div className="w-px h-6 bg-zinc-800 hidden lg:block"></div>
                 
-                {/* Terminate Session button - only visible when gateway is enabled */}
                 {gatewayEnabled && (
                   <button 
                     onClick={logout}
@@ -726,12 +718,11 @@ const AppContent: React.FC = () => {
               />
             )}
 
-            {view === 'dashboard' && activeHive && (
-              <Dashboard 
+            {view === 'command' && activeHive && (
+              <HiveCommand 
                 hive={activeHive} 
-                onNavigateToNodes={() => setView('cluster')} 
-                onRunAgent={runAgent}
                 agents={hiveAgents}
+                onRunAgent={runAgent}
               />
             )}
 
@@ -741,10 +732,6 @@ const AppContent: React.FC = () => {
                 allHives={hives}
                 onUpdate={(config) => updateHive(activeHive.id, { hiveMindConfig: config })}
               />
-            )}
-
-            {view === 'plan' && activeHive && (
-              <PlanView hiveId={activeHive.id} agents={activeAgents} />
             )}
 
             {view === 'team' && activeHive && (

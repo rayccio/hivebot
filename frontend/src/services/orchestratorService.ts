@@ -787,6 +787,46 @@ class OrchestratorService {
     return res.json();
   }
 
+  // ==================== GOALS ENDPOINTS ====================
+
+  async listGoals(hiveId: string): Promise<any[]> {
+    const res = await fetch(`${this.baseUrl}/hives/${hiveId}/goals`, {
+      headers: this._authHeaders(),
+    });
+    if (!res.ok) throw new Error('Failed to list goals');
+    return res.json();
+  }
+
+  async createGoal(hiveId: string, goal: { description: string; constraints?: any; success_criteria?: string[] }): Promise<any> {
+    const res = await fetch(`${this.baseUrl}/hives/${hiveId}/goals`, {
+      method: 'POST',
+      headers: this._authHeaders(),
+      body: JSON.stringify(goal),
+    });
+    if (!res.ok) throw new Error('Failed to create goal');
+    return res.json();
+  }
+
+  async listTasksForGoal(hiveId: string, goalId: string): Promise<any[]> {
+    const res = await fetch(`${this.baseUrl}/hives/${hiveId}/goals/${goalId}/tasks`, {
+      headers: this._authHeaders(),
+    });
+    if (!res.ok) throw new Error('Failed to list tasks');
+    return res.json();
+  }
+
+  async listArtifacts(hiveId: string, goalId: string): Promise<any[]> {
+    const res = await fetch(`${this.baseUrl}/hives/${hiveId}/goals/${goalId}/artifacts`, {
+      headers: this._authHeaders(),
+    });
+    if (!res.ok) throw new Error('Failed to list artifacts');
+    return res.json();
+  }
+
+  getArtifactDownloadUrl(hiveId: string, goalId: string, artifactId: string): string {
+    return `${this.baseUrl}/hives/${hiveId}/goals/${goalId}/artifacts/${artifactId}`;
+  }
+
   // ==================== PRIVATE HELPERS ====================
 
   private _mapUserFromBackend(data: any): UserAccount {
