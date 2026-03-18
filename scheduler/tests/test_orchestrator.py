@@ -20,9 +20,13 @@ async def test_are_dependencies_met_true():
     mock_cm.__aexit__ = AsyncMock(return_value=None)
     mock_pg.acquire = MagicMock(return_value=mock_cm)
 
-    # Mock fetch to return rows with completed status
+    # Mock fetch to return rows with completed status for all tasks
     async def mock_fetch(query, *args):
-        return [{'data': json.dumps({'status': 'completed'})}]
+        task_ids = args[0]  # list of task ids
+        results = []
+        for tid in task_ids:
+            results.append({'data': json.dumps({'status': 'completed'})})
+        return results
     mock_conn.fetch = AsyncMock(side_effect=mock_fetch)
 
     result = await are_dependencies_met(mock_pg, "task1", ["dep1", "dep2"])
@@ -38,11 +42,15 @@ async def test_are_dependencies_met_false():
     mock_pg.acquire = MagicMock(return_value=mock_cm)
 
     async def mock_fetch(query, *args):
-        # Simulate that one dependency is not completed
-        if args[0][0] == "dep1":
-            return [{'data': json.dumps({'status': 'completed'})}]
-        else:
-            return [{'data': json.dumps({'status': 'pending'})}]
+        task_ids = args[0]
+        results = []
+        for tid in task_ids:
+            if tid == "dep1":
+                status = 'completed'
+            else:
+                status = 'pending'  # dep2 is pending
+            results.append({'data': json.dumps({'status': status})})
+        return results
     mock_conn.fetch = AsyncMock(side_effect=mock_fetch)
 
     result = await are_dependencies_met(mock_pg, "task1", ["dep1", "dep2"])
