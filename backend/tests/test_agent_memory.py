@@ -1,6 +1,7 @@
 # backend/tests/test_agent_memory.py
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
+import numpy as np
 from app.services.agent_manager import AgentManager
 from app.services.docker_service import DockerService
 from app.models.types import Agent, AgentStatus, ReasoningConfig, ReportingTarget, AgentRole
@@ -18,7 +19,8 @@ async def test_get_long_term_memory():
          patch('sentence_transformers.SentenceTransformer', new_callable=MagicMock, create=True) as mock_transformer:
 
         mock_model = MagicMock()
-        mock_model.encode.return_value = [0.1] * 384
+        # Return a numpy array that has .tolist() method
+        mock_model.encode.return_value = np.array([0.1] * 384)
         mock_transformer.return_value = mock_model
 
         mock_vector.search_memory = AsyncMock(return_value=[
