@@ -109,6 +109,25 @@ def parse_tool_calls(ai_response: str) -> list:
             continue
     return tool_calls
 
+def parse_allowed_tools(tools_md: str) -> list:
+    """Parse tools.md to extract list of allowed tool names.
+    Assumes format like:
+    ## Permitted Tools
+    - web_search
+    - ssh_execute
+    etc.
+    """
+    allowed = []
+    for line in tools_md.splitlines():
+        line = line.strip()
+        if line.startswith('- '):
+            # Extract the tool name: first word after dash
+            parts = line[2:].split()
+            if parts:
+                tool = parts[0].strip('`*_')
+                allowed.append(tool)
+    return allowed
+
 async def save_artifact(hive_id, goal_id, task_id, file_path, content, status="draft"):
     """Upload an artifact to the orchestrator."""
     url = f"{ORCHESTRATOR_URL}/api/v1/hives/{hive_id}/goals/{goal_id}/artifacts"
@@ -133,7 +152,7 @@ async def read_artifact(hive_id, goal_id, task_id, file_path):
 
 MAX_ITERATIONS = 5
 
-async def execute_task_with_loop(agent_id, task_id, description, input_data, goal_id, hive_id, agent_data):
+async def execute_task_with_loop(agent_id, task_id, description, input_data, goal_id, hive_id, agent_data, allowed_tools):
     """Run the builder → tester → reviewer → fixer loop for a task."""
     reasoning_config = agent_data.get("reasoning", {})
 
@@ -230,11 +249,6 @@ Provide the fixed code. Output only the corrected code, no explanations."""
 # ==================== COMMAND PROCESSING ====================
 
 async def process_think_command(agent_id, user_input, model_config, simulation=False):
-    # ... (existing code, unchanged) ...
-    # (omitted for brevity, keep as is)
-    pass
-
-async def process_task_assign(agent_id, task_id, description, input_data, goal_id, hive_id, simulation=False):
     try:
         agent_data = await get_agent_from_db(agent_id)
         if not agent_data:
@@ -243,17 +257,104 @@ async def process_task_assign(agent_id, task_id, description, input_data, goal_i
 
         agent_data["status"] = "RUNNING"
         await update_agent_state(agent_id, agent_data)
+        logger.info(f"Agent {agent_id} started think command")
+
+        # Parse allowed tools
+        tools_md = agent_data.get("tools_md", "")
+        allowed_tools = parse_allowed_tools(tools_md)
+
+        response = await call_ai_delta(agent_id, user_input, model_config)
+        logger.debug(f"Agent {agent_id} AI response: {response[:100]}...")
+
+        # Parse and execute tool calls
+        tool_calls = parse_tool_calls(response)
+        observations = []
+        for tc in tool_calls:
+            tool_name = tc['tool']
+            params = tc['params']
+            try:
+                result = await tool_executor.execute(tool_name, params, simulation, allowed_tools)
+                observations.append(f"Observation from {tool_name}: {json.dumps(result)}")
+            except Exception as e:
+                observations.append(f"Observation from {tool_name}: error - {str(e)}")
+                logger.error(f"Tool {tool_name} execution failed: {e}")
+
+        if observations:
+            response += "\n" + "\n".join(observations)
+
+        # Update memory
+        if "memory" not in agent_data:
+            agent_data["memory"] = {"shortTerm": [], "summary": "", "tokenCount": 0}
+        agent_data["memory"]["shortTerm"].append(response)
+        if len(agent_data["memory"]["shortTerm"]) > 10:
+            agent_data["memory"]["shortTerm"] = agent_data["memory"]["shortTerm"][-10:]
+        agent_data["memory"]["tokenCount"] += len(response.split()) * 1.3
+
+        agent_data["status"] = "IDLE"
+        await update_agent_state(agent_id, agent_data)
+
+        await register_agent_idle(agent_id)
+
+        # Determine reporting target
+        reporting_target = agent_data.get("reportingTarget", "PARENT_AGENT")
+        parent_id = agent_data.get("parentId")
+
+        channels_to_publish = []
+        if reporting_target == "PARENT_AGENT" and parent_id:
+            channels_to_publish.append(f"report:parent:{parent_id}")
+        elif reporting_target == "OWNER_DIRECT":
+            channels_to_publish.append("report:owner")
+        elif reporting_target == "HYBRID":
+            if parent_id:
+                channels_to_publish.append(f"report:parent:{parent_id}")
+            channels_to_publish.append("report:owner")
+        else:
+            channels_to_publish.append("report:owner")
+
+        result = {
+            "agent_id": agent_id,
+            "response": response,
+            "timestamp": datetime.utcnow().isoformat(),
+            "simulation": simulation
+        }
+        redis_client = await redis.from_url(f"redis://{REDIS_HOST}:{REDIS_PORT}", decode_responses=True)
+        for ch in channels_to_publish:
+            await redis_client.publish(ch, json.dumps(result))
+        await redis_client.close()
+        logger.info(f"Agent {agent_id} finished think command")
+    except Exception as e:
+        logger.exception(f"Unhandled error in process_think_command for agent {agent_id}")
+        try:
+            agent_data = await get_agent_from_db(agent_id)
+            if agent_data:
+                agent_data["status"] = "ERROR"
+                await update_agent_state(agent_id, agent_data)
+        except:
+            pass
+
+async def process_task_assign(agent_id, task_id, description, input_data, goal_id, hive_id, simulation=False):
+    try:
+        agent_data = await get_agent_from_db(agent_id)
+        if not agent_data:
+            logger.error(f"Agent {agent_id} not found in DB")
+            return
+
+        # Parse allowed tools
+        tools_md = agent_data.get("tools_md", "")
+        allowed_tools = parse_allowed_tools(tools_md)
+
+        agent_data["status"] = "RUNNING"
+        await update_agent_state(agent_id, agent_data)
         logger.info(f"Agent {agent_id} started task {task_id}")
 
         # Execute the loop
         success, iterations = await execute_task_with_loop(
-            agent_id, task_id, description, input_data, goal_id, hive_id, agent_data
+            agent_id, task_id, description, input_data, goal_id, hive_id, agent_data, allowed_tools
         )
 
         # Update agent status and memory
         if "memory" not in agent_data:
             agent_data["memory"] = {"shortTerm": [], "summary": "", "tokenCount": 0}
-        # Add summary of task execution to memory
         summary = f"Task {task_id} {'succeeded' if success else 'failed'} after {iterations} iterations."
         agent_data["memory"]["shortTerm"].append(summary)
         if len(agent_data["memory"]["shortTerm"]) > 10:

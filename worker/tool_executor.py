@@ -2,7 +2,7 @@ import os
 import asyncio
 import logging
 import httpx
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 import json
 
 logger = logging.getLogger(__name__)
@@ -37,8 +37,19 @@ class ToolExecutor:
             self._http_client = httpx.AsyncClient(timeout=30.0)
         return self._http_client
 
-    async def execute(self, tool_name: str, params: Dict[str, Any], simulation: bool = False) -> Dict[str, Any]:
-        """Execute a tool, either in simulation mode or real."""
+    async def execute(
+        self,
+        tool_name: str,
+        params: Dict[str, Any],
+        simulation: bool = False,
+        allowed_tools: Optional[List[str]] = None
+    ) -> Dict[str, Any]:
+        """Execute a tool, checking permissions first."""
+        # Permission check
+        if allowed_tools is not None and tool_name not in allowed_tools:
+            logger.warning(f"Tool '{tool_name}' not allowed for this agent")
+            return {"error": f"Tool '{tool_name}' is not in allowed tools list", "simulated": simulation}
+
         if simulation:
             return await self._call_simulator(tool_name, params)
 

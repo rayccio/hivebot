@@ -5,7 +5,26 @@ import json
 from datetime import datetime
 import sys
 sys.path.append('..')
-from worker.main import execute_task_with_loop, process_task_assign
+from worker.main import execute_task_with_loop, process_task_assign, parse_allowed_tools
+
+@pytest.mark.asyncio
+async def test_parse_allowed_tools():
+    tools_md = """## Permitted Tools
+- web_search
+- ssh_execute
+- browser_action
+- run_code
+- api_call
+
+## Prohibited
+- write_file
+"""
+    allowed = parse_allowed_tools(tools_md)
+    assert set(allowed) == {"web_search", "ssh_execute", "browser_action", "run_code", "api_call"}
+
+def test_parse_allowed_tools_empty():
+    assert parse_allowed_tools("") == []
+    assert parse_allowed_tools("No dashes here") == []
 
 @pytest.mark.asyncio
 async def test_execute_task_with_loop_success_first_try():
@@ -15,7 +34,8 @@ async def test_execute_task_with_loop_success_first_try():
     input_data = {}
     goal_id = "g-test"
     hive_id = "h-test"
-    agent_data = {"reasoning": {"model": "openai/gpt-4o"}}
+    agent_data = {"reasoning": {"model": "openai/gpt-4o"}, "tools_md": "- run_code"}
+    allowed_tools = ["run_code"]
 
     with patch('worker.main.call_ai_delta', new_callable=AsyncMock) as mock_call, \
          patch('worker.main.save_artifact', new_callable=AsyncMock) as mock_save:
@@ -26,7 +46,7 @@ async def test_execute_task_with_loop_success_first_try():
         ]
 
         success, iterations = await execute_task_with_loop(
-            agent_id, task_id, description, input_data, goal_id, hive_id, agent_data
+            agent_id, task_id, description, input_data, goal_id, hive_id, agent_data, allowed_tools
         )
 
         assert success is True
@@ -42,7 +62,8 @@ async def test_execute_task_with_loop_failure_then_fix():
     input_data = {}
     goal_id = "g-test"
     hive_id = "h-test"
-    agent_data = {"reasoning": {"model": "openai/gpt-4o"}}
+    agent_data = {"reasoning": {"model": "openai/gpt-4o"}, "tools_md": "- run_code"}
+    allowed_tools = ["run_code"]
 
     with patch('worker.main.call_ai_delta', new_callable=AsyncMock) as mock_call, \
          patch('worker.main.save_artifact', new_callable=AsyncMock) as mock_save:
@@ -58,7 +79,7 @@ async def test_execute_task_with_loop_failure_then_fix():
             ]
 
             success, iterations = await execute_task_with_loop(
-                agent_id, task_id, description, input_data, goal_id, hive_id, agent_data
+                agent_id, task_id, description, input_data, goal_id, hive_id, agent_data, allowed_tools
             )
 
             assert success is True
@@ -77,7 +98,8 @@ async def test_process_task_assign_integration():
 
     agent_data = {
         "status": "IDLE",
-        "memory": {"shortTerm": [], "summary": "", "tokenCount": 0}
+        "memory": {"shortTerm": [], "summary": "", "tokenCount": 0},
+        "tools_md": "- run_code"
     }
 
     with patch('worker.main.get_agent_from_db', new_callable=AsyncMock) as mock_get, \
@@ -89,16 +111,15 @@ async def test_process_task_assign_integration():
         mock_get.return_value = agent_data
         mock_loop.return_value = (True, 2)
 
-        # Return client directly, not a context manager
         mock_redis_client = AsyncMock()
         mock_redis_client.publish = AsyncMock()
         mock_redis_client.close = AsyncMock()
-        mock_redis.return_value = mock_redis_client   # <-- FIXED
+        mock_redis.return_value = mock_redis_client
 
         await process_task_assign(agent_id, task_id, description, input_data, goal_id, hive_id, simulation=False)
 
         mock_loop.assert_awaited_once_with(
-            agent_id, task_id, description, input_data, goal_id, hive_id, agent_data
+            agent_id, task_id, description, input_data, goal_id, hive_id, agent_data, ["run_code"]
         )
         assert mock_update.await_count >= 2
         mock_register.assert_awaited_once_with(agent_id)
