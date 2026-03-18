@@ -37,6 +37,13 @@ class AgentRole(str, Enum):
     ARCHITECT = "architect"
     RESEARCHER = "researcher"
 
+# ==================== NEW ORGANIZATION ROLE ENUM ====================
+class OrgRole(str, Enum):
+    CEO = "ceo"
+    STRATEGY = "strategy"
+    DEPARTMENT_HEAD = "department_head"
+    MEMBER = "member"
+
 # ==============================================================
 
 # Channel types and configurations
@@ -129,6 +136,9 @@ class Agent(BaseModel):
     local_files: List[FileEntry] = []
     skills: List[AgentSkill] = []
     meta: MetaInfo = Field(default_factory=MetaInfo)
+    # ==================== NEW ORGANIZATION FIELDS ====================
+    org_role: OrgRole = OrgRole.MEMBER
+    department: Optional[str] = None
 
     model_config = ConfigDict(
         alias_generator=to_camel,
@@ -161,6 +171,9 @@ class AgentCreate(BaseModel):
     parent_id: Optional[str] = None
     user_uid: Optional[str] = None
     channels: List[ChannelConfig] = []
+    # ==================== NEW ORGANIZATION FIELDS ====================
+    org_role: OrgRole = OrgRole.MEMBER
+    department: Optional[str] = None
 
     model_config = ConfigDict(
         alias_generator=to_camel,
@@ -182,6 +195,9 @@ class AgentUpdate(BaseModel):
     memory: Optional[AgentMemory] = None
     local_files: Optional[List[FileEntry]] = None
     meta: Optional[MetaInfo] = None
+    # ==================== NEW ORGANIZATION FIELDS ====================
+    org_role: Optional[OrgRole] = None
+    department: Optional[str] = None
 
     model_config = ConfigDict(
         alias_generator=to_camel,

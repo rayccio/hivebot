@@ -2,7 +2,7 @@ import json
 import os
 from typing import Dict, Optional, List, Set
 from datetime import datetime
-from ..models.types import Agent, AgentCreate, AgentUpdate, AgentStatus, ChannelConfig, MetaInfo, ReasoningConfig, ReportingTarget, AgentRole
+from ..models.types import Agent, AgentCreate, AgentUpdate, AgentStatus, ChannelConfig, MetaInfo, ReasoningConfig, ReportingTarget, AgentRole, OrgRole
 from ..core.config import settings
 from .docker_service import DockerService
 from .redis_service import redis_service
@@ -18,7 +18,7 @@ from ..constants import (
     RESEARCHER_SOUL, RESEARCHER_IDENTITY, RESEARCHER_TOOLS
 )
 from .hive_manager import HiveManager
-from .skill_manager import SkillManager   # <-- ADDED
+from .skill_manager import SkillManager
 import uuid
 import shutil
 import logging
@@ -59,7 +59,9 @@ class AgentManager:
         reporting_target: ReportingTarget = ReportingTarget.PARENT,
         parent_id: Optional[str] = None,
         user_uid: Optional[str] = None,
-        channels: List[ChannelConfig] = None
+        channels: List[ChannelConfig] = None,
+        org_role: OrgRole = OrgRole.MEMBER,
+        department: Optional[str] = None
     ) -> Agent:
         """Create a new agent with the given role, using role‑specific prompts."""
         soul, identity, tools = self._get_prompts_for_role(role)
@@ -73,7 +75,9 @@ class AgentManager:
             reporting_target=reporting_target,
             parent_id=parent_id,
             user_uid=user_uid,
-            channels=channels or []
+            channels=channels or [],
+            org_role=org_role,
+            department=department
         )
         return await self.create_agent(agent_in)
 
@@ -117,7 +121,9 @@ class AgentManager:
             local_files=[],
             channels=agent_in.channels or [],
             skills=[],
-            meta={}
+            meta={},
+            org_role=agent_in.org_role,
+            department=agent_in.department
         )
 
         repo, session = await self._get_repo()
@@ -141,7 +147,7 @@ class AgentManager:
         if channel_types:
             await self._publish_config_update(agent, channel_types)
 
-        logger.info(f"Created bot {agent_id} with role {agent.role}")
+        logger.info(f"Created bot {agent_id} with role {agent.role}, org_role {agent.org_role}")
         return agent
 
     async def add_sub_agent(self, parent_id: str, child_id: str) -> bool:
@@ -393,7 +399,7 @@ class AgentManager:
             use_global_default=True
         )
 
-        # Create agent with role-specific prompts
+        # Create agent with role-specific prompts, default org_role = MEMBER
         agent = await self.create_role_agent(
             name=f"{role.value.capitalize()} Bee",
             role=role,
@@ -401,7 +407,9 @@ class AgentManager:
             reporting_target=ReportingTarget.PARENT,
             parent_id=None,
             user_uid=settings.DEFAULT_AGENT_UID,
-            channels=[]
+            channels=[],
+            org_role=OrgRole.MEMBER,
+            department=None
         )
 
         # Install the required skills
