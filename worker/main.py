@@ -11,6 +11,14 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy import select, text
 import re
 
+# Import role prompts from local constants
+from .constants import (
+    BUILDER_SOUL, BUILDER_IDENTITY, BUILDER_TOOLS,
+    TESTER_SOUL, TESTER_IDENTITY, TESTER_TOOLS,
+    REVIEWER_SOUL, REVIEWER_IDENTITY, REVIEWER_TOOLS,
+    FIXER_SOUL, FIXER_IDENTITY, FIXER_TOOLS
+)
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("hivebot-worker")
 
@@ -101,11 +109,9 @@ def parse_tool_calls(ai_response: str) -> list:
             continue
     return tool_calls
 
-async def save_artifact(goal_id, task_id, file_path, content, status="draft"):
+async def save_artifact(hive_id, goal_id, task_id, file_path, content, status="draft"):
     """Upload an artifact to the orchestrator."""
-    url = f"{ORCHESTRATOR_URL}/api/v1/hives/{hive_id}/goals/{goal_id}/artifacts"  # need hive_id
-    # We'll need to pass hive_id – maybe from task data. For now, assume we have it.
-    # In practice, we'll have hive_id in the task data.
+    url = f"{ORCHESTRATOR_URL}/api/v1/hives/{hive_id}/goals/{goal_id}/artifacts"
     async with httpx.AsyncClient() as client:
         files = {'file': (file_path, content)}
         data = {'task_id': task_id, 'file_path': file_path, 'status': status}
@@ -113,7 +119,7 @@ async def save_artifact(goal_id, task_id, file_path, content, status="draft"):
         resp.raise_for_status()
         return resp.json()
 
-async def read_artifact(goal_id, task_id, file_path):
+async def read_artifact(hive_id, goal_id, task_id, file_path):
     """Read the latest version of an artifact."""
     url = f"{ORCHESTRATOR_URL}/api/v1/hives/{hive_id}/goals/{goal_id}/artifacts/latest?task_id={task_id}&file_path={file_path}"
     async with httpx.AsyncClient() as client:
@@ -129,8 +135,6 @@ MAX_ITERATIONS = 5
 
 async def execute_task_with_loop(agent_id, task_id, description, input_data, goal_id, hive_id, agent_data):
     """Run the builder → tester → reviewer → fixer loop for a task."""
-    # We'll need the agent's role-specific prompts. They are already in agent_data.
-    # We'll also need the agent's reasoning config.
     reasoning_config = agent_data.get("reasoning", {})
 
     # Helper to call AI with a role override
@@ -142,18 +146,7 @@ async def execute_task_with_loop(agent_id, task_id, description, input_data, goa
             system_prompt_override=role_prompt
         )
 
-    # Get role prompts from agent_data (they are already set based on the agent's role)
-    # But for loop, we need builder, tester, reviewer, fixer prompts. The agent might be generic.
-    # We'll use the role-specific prompts from the agent's own prompts? No, the agent has a fixed role.
-    # For the loop, the agent acts as multiple roles, so we need to switch system prompts.
-    # We'll fetch the prompts from constants based on role names.
-    from app.constants import (
-        BUILDER_SOUL, BUILDER_IDENTITY, BUILDER_TOOLS,
-        TESTER_SOUL, TESTER_IDENTITY, TESTER_TOOLS,
-        REVIEWER_SOUL, REVIEWER_IDENTITY, REVIEWER_TOOLS,
-        FIXER_SOUL, FIXER_IDENTITY, FIXER_TOOLS
-    )
-    # Combine soul, identity, tools into a single system prompt (same format as in internal endpoint)
+    # Combine soul, identity, tools into a single system prompt
     def make_system_prompt(soul, identity, tools):
         return f"""You are an AI agent with the following STRICT IDENTITY. You must follow this identity exactly.
 
@@ -168,6 +161,7 @@ TOOLS:
 
 IMPORTANT: You are NOT a generic AI assistant. You are the entity described above. Always respond in character.
 """
+
     builder_prompt = make_system_prompt(BUILDER_SOUL, BUILDER_IDENTITY, BUILDER_TOOLS)
     tester_prompt = make_system_prompt(TESTER_SOUL, TESTER_IDENTITY, TESTER_TOOLS)
     reviewer_prompt = make_system_prompt(REVIEWER_SOUL, REVIEWER_IDENTITY, REVIEWER_TOOLS)
@@ -184,8 +178,8 @@ Previous code (if any): {current_code or 'None'}
 Generate the code for this task. Output only the code, no explanations."""
         code = await call_with_role(builder_prompt, builder_input)
         # Save code as artifact
-        file_path = f"task_{task_id}/iteration_{iteration}/code.py"  # example path
-        await save_artifact(goal_id, task_id, file_path, code.encode(), status="draft")
+        file_path = f"task_{task_id}/iteration_{iteration}/code.py"
+        await save_artifact(hive_id, goal_id, task_id, file_path, code.encode(), status="draft")
         current_code = code
 
         # Tester step: test the code
@@ -200,12 +194,12 @@ Write and run tests for this code. Output the test results in JSON format with k
         except:
             test_result = {"passed": False, "errors": ["Failed to parse test output"]}
         # Save test result artifact
-        await save_artifact(goal_id, task_id, f"task_{task_id}/iteration_{iteration}/test_result.json", json.dumps(test_result).encode(), status="tested")
+        await save_artifact(hive_id, goal_id, task_id, f"task_{task_id}/iteration_{iteration}/test_result.json", json.dumps(test_result).encode(), status="tested")
 
         if test_result.get("passed"):
             logger.info(f"Task {task_id} passed on iteration {iteration}")
             # Mark final code as final
-            await save_artifact(goal_id, task_id, f"task_{task_id}/final_code.py", current_code.encode(), status="final")
+            await save_artifact(hive_id, goal_id, task_id, f"task_{task_id}/final_code.py", current_code.encode(), status="final")
             return True, iteration
 
         # Reviewer step: get issues
@@ -216,7 +210,7 @@ Test errors:
 {json.dumps(test_result.get('errors', []), indent=2)}
 List the issues in the code that caused the test failures. Provide a list of actionable fixes."""
         issues = await call_with_role(reviewer_prompt, reviewer_input)
-        await save_artifact(goal_id, task_id, f"task_{task_id}/iteration_{iteration}/issues.txt", issues.encode(), status="reviewed")
+        await save_artifact(hive_id, goal_id, task_id, f"task_{task_id}/iteration_{iteration}/issues.txt", issues.encode(), status="reviewed")
 
         # Fixer step: apply fixes
         fixer_input = f"""Task: {description}
@@ -227,7 +221,7 @@ Issues:
 Provide the fixed code. Output only the corrected code, no explanations."""
         fixed_code = await call_with_role(fixer_prompt, fixer_input)
         current_code = fixed_code
-        await save_artifact(goal_id, task_id, f"task_{task_id}/iteration_{iteration}/fixed_code.py", fixed_code.encode(), status="fixed")
+        await save_artifact(hive_id, goal_id, task_id, f"task_{task_id}/iteration_{iteration}/fixed_code.py", fixed_code.encode(), status="fixed")
 
     # If loop exits without success
     logger.warning(f"Task {task_id} failed after {MAX_ITERATIONS} iterations")
@@ -237,6 +231,7 @@ Provide the fixed code. Output only the corrected code, no explanations."""
 
 async def process_think_command(agent_id, user_input, model_config, simulation=False):
     # ... (existing code, unchanged) ...
+    # (omitted for brevity, keep as is)
     pass
 
 async def process_task_assign(agent_id, task_id, description, input_data, goal_id, hive_id, simulation=False):
@@ -328,7 +323,7 @@ async def worker_loop():
                 data.get("description"),
                 data.get("input_data", {}),
                 data.get("goal_id"),
-                data.get("hive_id"),  # need to include hive_id in the message
+                data.get("hive_id"),
                 simulation
             ))
         else:

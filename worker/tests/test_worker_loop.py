@@ -20,7 +20,6 @@ async def test_execute_task_with_loop_success_first_try():
     with patch('worker.main.call_ai_delta', new_callable=AsyncMock) as mock_call, \
          patch('worker.main.save_artifact', new_callable=AsyncMock) as mock_save:
 
-        # Builder returns code, tester passes
         mock_call.side_effect = [
             "def test_func(): return True",  # builder
             '{"passed": true, "errors": []}'  # tester
@@ -33,7 +32,8 @@ async def test_execute_task_with_loop_success_first_try():
         assert success is True
         assert iterations == 1
         assert mock_call.call_count == 2
-        assert mock_save.call_count == 2  # code and test result
+        # Each save_artifact called with hive_id, goal_id, task_id, ...
+        assert mock_save.call_count == 2
 
 @pytest.mark.asyncio
 async def test_execute_task_with_loop_failure_then_fix():
@@ -48,7 +48,6 @@ async def test_execute_task_with_loop_failure_then_fix():
     with patch('worker.main.call_ai_delta', new_callable=AsyncMock) as mock_call, \
          patch('worker.main.save_artifact', new_callable=AsyncMock) as mock_save:
 
-        # Simulate: builder (1), tester fails (2), reviewer (3), fixer (4), tester passes (5)
         mock_call.side_effect = [
             "def test_func(): return False",  # builder
             '{"passed": false, "errors": ["Expected True got False"]}',  # tester
@@ -64,7 +63,7 @@ async def test_execute_task_with_loop_failure_then_fix():
         assert success is True
         assert iterations == 2
         assert mock_call.call_count == 5
-        assert mock_save.call_count == 5  # code, test, issues, fixed, final test
+        assert mock_save.call_count == 5
 
 @pytest.mark.asyncio
 async def test_process_task_assign_integration():
@@ -91,7 +90,9 @@ async def test_process_task_assign_integration():
 
         await process_task_assign(agent_id, task_id, description, input_data, goal_id, hive_id, simulation=False)
 
-        mock_loop.assert_awaited_once()
-        mock_update.assert_called()  # status changes
+        mock_loop.assert_awaited_once_with(
+            agent_id, task_id, description, input_data, goal_id, hive_id, mock_get.return_value
+        )
+        mock_update.assert_called()
         mock_register.assert_awaited_once_with(agent_id)
         mock_redis_client.publish.assert_awaited_once()
