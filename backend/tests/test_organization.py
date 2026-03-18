@@ -58,6 +58,28 @@ def sample_agents():
             department=None
         ),
         Agent(
+            id="strat2",  # <-- added missing agent
+            name="Strategy2",
+            role=AgentRole.GENERIC,
+            soul_md="",
+            identity_md="",
+            tools_md="",
+            status=AgentStatus.IDLE,
+            reasoning=reasoning,
+            reporting_target=ReportingTarget.PARENT,
+            parent_id="ceo1",
+            sub_agent_ids=[],
+            memory={"short_term": [], "summary": "", "token_count": 0},
+            last_active=now,
+            container_id="",
+            user_uid="10001",
+            local_files=[],
+            skills=[],
+            meta={},
+            org_role=OrgRole.STRATEGY,
+            department=None
+        ),
+        Agent(
             id="dept1",
             name="DeptHead",
             role=AgentRole.GENERIC,
@@ -93,9 +115,10 @@ async def test_get_org_chart(client: AsyncClient, sample_agents):
     response = await client.get("/api/v1/hives/h-test/organization/chart")
     assert response.status_code == 200
     data = response.json()
-    assert len(data) == 3
+    assert len(data) == 4  # now 4 agents
     assert data[0]["id"] == "ceo1"
-    assert data[0]["org_role"] == "ceo"
+    # The key is camelCase because of alias_generator=to_camel
+    assert data[0]["orgRole"] == "ceo"
 
     fastapi_app.dependency_overrides.clear()
 
@@ -104,7 +127,6 @@ async def test_get_team(client: AsyncClient, sample_agents):
     mock_agent_manager = AsyncMock()
     mock_hive_manager = AsyncMock()
 
-    # Map agents by id
     agent_map = {a.id: a for a in sample_agents}
     mock_agent_manager.get_agent = AsyncMock(side_effect=lambda id: agent_map.get(id))
 
@@ -115,7 +137,7 @@ async def test_get_team(client: AsyncClient, sample_agents):
     fastapi_app.dependency_overrides[get_agent_manager] = lambda: mock_agent_manager
     fastapi_app.dependency_overrides[get_hive_manager] = lambda: mock_hive_manager
 
-    # Test ceo1's team
+    # Test ceo1's team (should have 2 members)
     response = await client.get("/api/v1/hives/h-test/organization/agents/ceo1/team")
     assert response.status_code == 200
     data = response.json()
