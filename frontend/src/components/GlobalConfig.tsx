@@ -543,6 +543,11 @@ interface GlobalConfigProps {
   onRequirePasswordChange: (action: () => void) => void;
   onLoadUsers?: () => Promise<void>;
   onRefreshSettings: () => Promise<void>;
+  // New props from App
+  category: 'system' | 'knowledge' | 'integrations';
+  subTab: string;
+  onCategoryChange: (category: 'system' | 'knowledge' | 'integrations') => void;
+  onSubTabChange: (subTab: string) => void;
 }
 
 export const GlobalConfig: React.FC<GlobalConfigProps> = ({ 
@@ -559,23 +564,18 @@ export const GlobalConfig: React.FC<GlobalConfigProps> = ({
   currentUser,
   onRequirePasswordChange,
   onLoadUsers,
-  onRefreshSettings
+  onRefreshSettings,
+  category,
+  subTab,
+  onCategoryChange,
+  onSubTabChange
 }) => {
-  type Category = 'system' | 'knowledge' | 'integrations';
-  type SystemSub = 'users' | 'settings' | 'logs';
-  type KnowledgeSub = 'hive-mind' | 'system-files' | 'skills' | 'meta';
-  type IntegrationsSub = 'environment';
-
-  const [category, setCategory] = useState<Category>('system');
-  const [subTab, setSubTab] = useState<SystemSub | KnowledgeSub | IntegrationsSub>('users');
-
   const [editingUser, setEditingUser] = useState<UserAccount | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   
   // Skills state
   const [skills, setSkills] = useState<Skill[]>([]);
-  const [loadingSkills, setLoadingSkills] = useState(false);
   const [editingSkill, setEditingSkill] = useState<Skill | null>(null);
   const [isCreatingSkill, setIsCreatingSkill] = useState(false);
   const [showVersionModal, setShowVersionModal] = useState<Skill | null>(null);
@@ -774,10 +774,10 @@ export const GlobalConfig: React.FC<GlobalConfigProps> = ({
     }
   };
 
-  // Render content based on category + subTab
+  // Render content based on category and subTab
   const renderContent = () => {
     if (category === 'system') {
-      switch (subTab as SystemSub) {
+      switch (subTab) {
         case 'users':
           return (
             <div className="space-y-8 max-w-5xl mx-auto">
@@ -880,7 +880,6 @@ export const GlobalConfig: React.FC<GlobalConfigProps> = ({
                 <h3 className="text-2xl font-black tracking-tighter uppercase">System Settings</h3>
                 <p className="text-zinc-500 text-sm">Global security and behavioral parameters.</p>
               </div>
-
               <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-8 space-y-8 shadow-2xl">
                 {/* Login Gateway Toggle */}
                 <div className="flex items-center justify-between p-4 bg-zinc-950 border border-zinc-800 rounded-2xl">
@@ -1016,7 +1015,6 @@ export const GlobalConfig: React.FC<GlobalConfigProps> = ({
                 <h3 className="text-2xl font-black tracking-tighter uppercase">Audit Trail</h3>
                 <p className="text-zinc-500 text-sm">Real-time system event monitoring.</p>
               </div>
-
               <div className="bg-zinc-900 border border-zinc-800 rounded-3xl overflow-hidden shadow-2xl">
                 <table className="w-full text-left border-collapse">
                   <thead>
@@ -1051,7 +1049,7 @@ export const GlobalConfig: React.FC<GlobalConfigProps> = ({
     }
 
     if (category === 'knowledge') {
-      switch (subTab as KnowledgeSub) {
+      switch (subTab) {
         case 'hive-mind':
           return <HiveMindDashboard hives={hives} />;
         case 'system-files':
@@ -1188,134 +1186,23 @@ export const GlobalConfig: React.FC<GlobalConfigProps> = ({
     if (category === 'integrations') {
       return (
         <div className="max-w-5xl mx-auto space-y-12 pb-20 animate-in slide-in-from-bottom-4 duration-500">
-          {/* AI Provider Configuration Box */}
           <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-8 space-y-6 shadow-2xl relative overflow-hidden">
             <div className="absolute top-0 right-0 p-8 opacity-5 group-hover:opacity-10 transition-opacity"><Icons.Cpu /></div>
             <h3 className="text-xs font-black uppercase tracking-[0.2em] text-emerald-500 mb-6">AI Provider Configuration</h3>
             <AIProviderConfig />
           </div>
-
-          {/* Bridge Manager Box */}
           <BridgeManager />
-
-          {/* External Communication Box */}
           <PublicUrlConfig />
         </div>
       );
     }
+
     return null;
   };
 
   return (
-    <div className="flex h-full animate-in fade-in duration-500">
-      {/* Sidebar */}
-      <div className="w-64 border-r border-zinc-800 bg-zinc-950/30 p-4 space-y-6 overflow-y-auto">
-        {/* System */}
-        <div>
-          <div className="text-[10px] font-black text-zinc-600 uppercase tracking-widest mb-2 px-2">System</div>
-          <div className="space-y-1">
-            <button
-              onClick={() => { setCategory('system'); setSubTab('users'); }}
-              className={`w-full text-left px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-                category === 'system' && subTab === 'users'
-                  ? 'bg-emerald-500/10 text-emerald-400'
-                  : 'text-zinc-500 hover:bg-zinc-900 hover:text-zinc-300'
-              }`}
-            >
-              Users
-            </button>
-            <button
-              onClick={() => { setCategory('system'); setSubTab('settings'); }}
-              className={`w-full text-left px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-                category === 'system' && subTab === 'settings'
-                  ? 'bg-emerald-500/10 text-emerald-400'
-                  : 'text-zinc-500 hover:bg-zinc-900 hover:text-zinc-300'
-              }`}
-            >
-              Settings
-            </button>
-            <button
-              onClick={() => { setCategory('system'); setSubTab('logs'); }}
-              className={`w-full text-left px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-                category === 'system' && subTab === 'logs'
-                  ? 'bg-emerald-500/10 text-emerald-400'
-                  : 'text-zinc-500 hover:bg-zinc-900 hover:text-zinc-300'
-              }`}
-            >
-              Audit Logs
-            </button>
-          </div>
-        </div>
-
-        {/* Knowledge */}
-        <div>
-          <div className="text-[10px] font-black text-zinc-600 uppercase tracking-widest mb-2 px-2">Knowledge</div>
-          <div className="space-y-1">
-            <button
-              onClick={() => { setCategory('knowledge'); setSubTab('hive-mind'); }}
-              className={`w-full text-left px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-                category === 'knowledge' && subTab === 'hive-mind'
-                  ? 'bg-emerald-500/10 text-emerald-400'
-                  : 'text-zinc-500 hover:bg-zinc-900 hover:text-zinc-300'
-              }`}
-            >
-              Hive Mind
-            </button>
-            <button
-              onClick={() => { setCategory('knowledge'); setSubTab('system-files'); }}
-              className={`w-full text-left px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-                category === 'knowledge' && subTab === 'system-files'
-                  ? 'bg-emerald-500/10 text-emerald-400'
-                  : 'text-zinc-500 hover:bg-zinc-900 hover:text-zinc-300'
-              }`}
-            >
-              System Files
-            </button>
-            <button
-              onClick={() => { setCategory('knowledge'); setSubTab('skills'); }}
-              className={`w-full text-left px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-                category === 'knowledge' && subTab === 'skills'
-                  ? 'bg-emerald-500/10 text-emerald-400'
-                  : 'text-zinc-500 hover:bg-zinc-900 hover:text-zinc-300'
-              }`}
-            >
-              Skills
-            </button>
-            <button
-              onClick={() => { setCategory('knowledge'); setSubTab('meta'); }}
-              className={`w-full text-left px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-                category === 'knowledge' && subTab === 'meta'
-                  ? 'bg-emerald-500/10 text-emerald-400'
-                  : 'text-zinc-500 hover:bg-zinc-900 hover:text-zinc-300'
-              }`}
-            >
-              Meta Bots
-            </button>
-          </div>
-        </div>
-
-        {/* Integrations */}
-        <div>
-          <div className="text-[10px] font-black text-zinc-600 uppercase tracking-widest mb-2 px-2">Integrations</div>
-          <div className="space-y-1">
-            <button
-              onClick={() => { setCategory('integrations'); setSubTab('environment'); }}
-              className={`w-full text-left px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-                category === 'integrations' && subTab === 'environment'
-                  ? 'bg-emerald-500/10 text-emerald-400'
-                  : 'text-zinc-500 hover:bg-zinc-900 hover:text-zinc-300'
-              }`}
-            >
-              Environment
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Main content */}
-      <div className="flex-1 overflow-y-auto p-6">
-        {renderContent()}
-      </div>
+    <div className="flex-1 overflow-y-auto p-6">
+      {renderContent()}
 
       {/* Modals */}
       {(isCreating || editingUser) && (

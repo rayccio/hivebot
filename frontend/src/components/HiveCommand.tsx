@@ -1,3 +1,4 @@
+// frontend/src/components/HiveCommand.tsx
 import React, { useState, useEffect, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Hive, Agent, HiveTask } from '../types';
@@ -46,7 +47,7 @@ export const HiveCommand: React.FC<HiveCommandProps> = ({ hive, agents, onRunAge
     refetchInterval: 2000,
   });
 
-  // Fetch artifacts for the current goal (optional)
+  // Fetch artifacts for the current goal
   const { data: artifacts = [], isLoading: artifactsLoading } = useQuery({
     queryKey: ['artifacts', currentGoalId],
     queryFn: () => currentGoalId ? orchestratorService.listArtifacts(hive.id, currentGoalId) : [],
@@ -77,12 +78,11 @@ export const HiveCommand: React.FC<HiveCommandProps> = ({ hive, agents, onRunAge
   const handleCancelGoal = async () => {
     if (!activeGoal) return;
     if (!confirm('Cancel current goal? This will stop all associated tasks.')) return;
-    // We would need an API endpoint to cancel a goal – for now just mark as failed?
-    // TODO: implement goal cancellation
+    // TODO: implement goal cancellation API
     toast('Goal cancellation not yet implemented');
   };
 
-  // Stats (similar to old Dashboard)
+  // Stats
   const stats = useMemo(() => {
     const totalTokens = agents.reduce((acc, a) => acc + a.memory.tokenCount, 0);
     const activeNodes = agents.filter(a => a.status === 'RUNNING').length;
@@ -244,7 +244,7 @@ export const HiveCommand: React.FC<HiveCommandProps> = ({ hive, agents, onRunAge
                 {artifacts.slice(0, 4).map(art => (
                   <a
                     key={art.id}
-                    href={orchestratorService.getArtifactDownloadUrl(hive.id, art.id)}
+                    href={orchestratorService.getArtifactDownloadUrl(hive.id, activeGoal.id, art.id)}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex items-center gap-2 p-2 bg-zinc-950 rounded-lg border border-zinc-800 hover:border-emerald-500/30 transition-colors"

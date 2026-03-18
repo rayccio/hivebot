@@ -64,10 +64,14 @@ const AppContent: React.FC = () => {
     rateLimitPeriodSeconds: 60
   });
 
-  // Updated view names: 'command' replaces 'dashboard' and 'plan'
   const [view, setView] = useState<'command' | 'cluster' | 'agent' | 'context' | 'brain' | 'team' | 'global-config'>('command');
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+
+  // ==================== GLOBAL CONFIG NAVIGATION STATE ====================
+  const [globalConfigCategory, setGlobalConfigCategory] = useState<'system' | 'knowledge' | 'integrations'>('system');
+  const [globalConfigSubTab, setGlobalConfigSubTab] = useState<string>('users');
+  // ========================================================================
 
   const { getPrimaryModel, refreshProviders } = useProviders();
 
@@ -157,7 +161,7 @@ const AppContent: React.FC = () => {
           setActiveHiveId(savedActive);
         } else {
           setActiveHiveId(hivesData[0].id);
-          setView('command'); // default to command view
+          setView('command');
         }
 
         // Refresh providers in the background (non‑critical)
@@ -189,7 +193,6 @@ const AppContent: React.FC = () => {
   useEffect(() => {
     if (activeHiveId) {
       fetchActiveAgents(activeHiveId);
-      // Set up interval to refresh every 10 seconds
       intervalRef.current = setInterval(() => {
         fetchActiveAgents(activeHiveId);
       }, 10000);
@@ -380,7 +383,7 @@ const AppContent: React.FC = () => {
       });
       setHives(prev => [...prev, newHive]);
       setActiveHiveId(newHive.id);
-      setView('command'); // default to command
+      setView('command');
       setSelectedAgentId(null);
       setIsSidebarOpen(false);
     } catch (err) {
@@ -468,7 +471,7 @@ const AppContent: React.FC = () => {
 
   const handleSelectHive = (id: string) => {
     setActiveHiveId(id);
-    setView('command'); // go to command
+    setView('command');
     setSelectedAgentId(null);
     setIsSidebarOpen(false);
   };
@@ -625,6 +628,10 @@ const AppContent: React.FC = () => {
             onViewChange={(v) => { setView(v); setIsSidebarOpen(false); }}
             onClose={() => setIsSidebarOpen(false)}
             currentUser={user}
+            globalConfigCategory={globalConfigCategory}
+            globalConfigSubTab={globalConfigSubTab}
+            onGlobalConfigCategoryChange={setGlobalConfigCategory}
+            onGlobalConfigSubTabChange={setGlobalConfigSubTab}
           />
         </div>
 
@@ -641,7 +648,6 @@ const AppContent: React.FC = () => {
               </div>
               
               <div className="flex items-center gap-2 md:gap-6">
-                {/* Hive navigation */}
                 <div className="hidden lg:flex bg-zinc-900 p-1 rounded-2xl border border-zinc-800 shadow-inner">
                   <button onClick={() => setView('command')} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${view === 'command' ? 'bg-zinc-800 text-emerald-400 shadow-xl' : 'text-zinc-500 hover:text-zinc-300'}`}>Command</button>
                   <button onClick={() => setView('cluster')} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${view === 'cluster' ? 'bg-zinc-800 text-emerald-400 shadow-xl' : 'text-zinc-500 hover:text-zinc-300'}`}>Bots</button>
@@ -652,7 +658,6 @@ const AppContent: React.FC = () => {
                 
                 <div className="w-px h-6 bg-zinc-800 hidden lg:block"></div>
                 
-                {/* Terminate Session button - only visible when gateway is enabled */}
                 {gatewayEnabled && (
                   <button 
                     onClick={logout}
@@ -715,6 +720,11 @@ const AppContent: React.FC = () => {
                 }}
                 onLoadUsers={loadUsers}
                 onRefreshSettings={refreshGlobalSettings}
+                // ==================== NEW PROPS ====================
+                category={globalConfigCategory}
+                subTab={globalConfigSubTab}
+                onCategoryChange={setGlobalConfigCategory}
+                onSubTabChange={setGlobalConfigSubTab}
               />
             )}
 
