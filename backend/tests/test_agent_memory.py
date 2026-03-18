@@ -13,8 +13,9 @@ async def test_get_long_term_memory():
     agent_id = "b-test"
     query = "test query"
 
-    with patch('app.services.agent_manager.vector_service') as mock_vector, \
-         patch('sentence_transformers.SentenceTransformer') as mock_transformer:
+    # Patch vector_service and SentenceTransformer with create=True
+    with patch('app.services.agent_manager.vector_service', new_callable=AsyncMock, create=True) as mock_vector, \
+         patch('sentence_transformers.SentenceTransformer', new_callable=MagicMock, create=True) as mock_transformer:
 
         mock_model = MagicMock()
         mock_model.encode.return_value = [0.1] * 384
