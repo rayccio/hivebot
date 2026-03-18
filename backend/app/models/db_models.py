@@ -87,3 +87,29 @@ class EvaluationTaskModel(Base):
     tags = Column(JSON, default=[])
     active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+# ==================== NEW MODELS FOR PHASE 1 & 2 ====================
+
+class GoalModel(Base):
+    __tablename__ = "goals"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    data = Column(JSON, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+class ArtifactModel(Base):
+    __tablename__ = "artifacts"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    data = Column(JSON, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+class TaskEdgeModel(Base):
+    __tablename__ = "task_edges"
+
+    from_task = Column(String, primary_key=True)
+    to_task = Column(String, primary_key=True)
+
+# =====================================================================
