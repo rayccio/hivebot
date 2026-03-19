@@ -86,11 +86,20 @@ async def call_ai_delta(agent_id, user_input, model_config, system_prompt_overri
         "system_prompt_override": system_prompt_override
     }
     async with httpx.AsyncClient() as client:
-        resp = await client.post(url, json=payload, headers=headers, timeout=60)
-        if resp.status_code == 404:
-            logger.error(f"AI endpoint not found at {url}. Check backend routing.")
-        resp.raise_for_status()
-        return resp.json()["response"]
+        try:
+            logger.info(f"Calling AI endpoint: {url}")
+            logger.debug(f"Payload: {payload}")
+            resp = await client.post(url, json=payload, headers=headers, timeout=60)
+            logger.info(f"AI response status: {resp.status_code}")
+            if resp.status_code != 200:
+                logger.error(f"Response body: {resp.text}")
+            resp.raise_for_status()
+            return resp.json()["response"]
+        except httpx.HTTPStatusError as e:
+            logger.error(f"HTTP error: {e}")
+            if e.response.status_code == 404:
+                logger.error(f"404 response body: {e.response.text}")
+            raise
 
 def parse_tool_calls(ai_response: str) -> list:
     pattern = r'\{.*?\}'

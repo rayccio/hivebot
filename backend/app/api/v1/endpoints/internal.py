@@ -1,4 +1,5 @@
-from fastapi import APIRouter, HTTPException, Depends, Header
+from fastapi import APIRouter, HTTPException, Depends, Header, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import Dict, Any, Optional, List
 from ....services.litellm_service import generate_with_messages
@@ -62,13 +63,21 @@ async def verify_internal_token(authorization: Optional[str] = Header(None)):
 @router.get("/ping")
 async def ping():
     """Simple endpoint to check if the internal router is mounted."""
+    logger.info("Ping endpoint called")
     return {"status": "ok"}
+
+@router.get("/")
+async def root():
+    """Root of internal AI router – for debugging."""
+    logger.info("Internal AI root called")
+    return {"message": "Internal AI router is mounted"}
 
 @router.post("/generate-delta", response_model=GenerateResponse)
 async def ai_generate_delta(
     request: GenerateDeltaRequest,
     token: str = Depends(verify_internal_token)
 ):
+    logger.info(f"Generate-delta called for agent {request.agent_id}")
     agent_id = request.agent_id
     user_input = request.input
     config = request.config
@@ -256,3 +265,18 @@ async def spawn_agent(
     if not agent:
         raise HTTPException(status_code=500, detail="Failed to spawn agent")
     return {"agent_id": agent.id}
+
+# ==================== CATCH-ALL FOR DEBUGGING ====================
+@router.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
+async def catch_all(request: Request, path: str):
+    """Catch-all route to log any unmatched requests to this router."""
+    logger.error(f"Internal AI router catch-all: method={request.method}, path={path}, full_url={request.url}")
+    # Attempt to read body for POST requests
+    body = None
+    if request.method in ("POST", "PUT", "PATCH"):
+        try:
+            body = await request.json()
+            logger.error(f"Request body: {body}")
+        except:
+            pass
+    return JSONResponse(status_code=404, content={"detail": "Not found"})
