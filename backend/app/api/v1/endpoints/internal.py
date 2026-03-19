@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends, Header, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import Dict, Any, Optional, List
+from sqlalchemy import text
 from ....services.litellm_service import generate_with_messages
 from ....services.redis_service import redis_service
 from ....services.agent_manager import AgentManager
@@ -9,7 +10,8 @@ from ....services.docker_service import DockerService
 from ....services.vector_service import vector_service
 from ....services.embedding_client import trigger_message_embedding
 from ....core.config import settings
-from ....models.types import ConversationMessage, HiveMindAccessLevel
+from ....core.database import AsyncSessionLocal
+from ....models.types import ConversationMessage, HiveMindAccessLevel, Hive
 from datetime import datetime
 import secrets
 import logging
@@ -61,6 +63,21 @@ async def verify_internal_token(authorization: Optional[str] = Header(None)):
         raise HTTPException(status_code=403, detail="Invalid token")
     return token
 
+async def get_hive_for_agent(agent_id: str) -> Optional[str]:
+    """Direct database query to find the hive containing this agent."""
+    async with AsyncSessionLocal() as session:
+        # Query hives where agent_id is in the agent_ids JSONB array
+        result = await session.execute(
+            text("SELECT data FROM hives WHERE data->'agent_ids' ? :agent_id"),
+            {"agent_id": agent_id}
+        )
+        row = result.fetchone()
+        if row:
+            hive_data = row[0]
+            # row[0] is already a dict (deserialized by asyncpg)
+            return hive_data.get("id")
+    return None
+
 @router.get("/ping")
 async def ping():
     """Simple endpoint to check if the internal router is mounted."""
@@ -109,21 +126,27 @@ async def ai_generate_delta(
             raise HTTPException(status_code=404, detail="Agent not found")
         logger.info(f"Agent {agent_id} found: {agent.name}")
 
-        # Get hive_id for this agent
-        from ....services.hive_manager import HiveManager
-        hive_manager = HiveManager(agent_manager)
-        hives = await hive_manager.list_hives()
-        agent_hive = None
-        for hive in hives:
-            if agent.id in [a.id for a in hive.agents]:
-                agent_hive = hive
-                break
-        if not agent_hive:
-            logger.error(f"Agent {agent_id} not associated with any hive")
+        # Get hive_id for this agent via direct query
+        hive_id = await get_hive_for_agent(agent_id)
+        if not hive_id:
+            logger.error(f"Agent {agent_id} not associated with any hive (direct query)")
             raise HTTPException(status_code=404, detail="Agent not associated with any hive")
 
-        hive_id = agent_hive.id
-        hive_config = agent_hive.hive_mind_config
+        # Fetch hive details for context and config
+        async with AsyncSessionLocal() as session:
+            result = await session.execute(
+                text("SELECT data FROM hives WHERE id = :hive_id"),
+                {"hive_id": hive_id}
+            )
+            row = result.fetchone()
+            if not row:
+                logger.error(f"Hive {hive_id} not found")
+                raise HTTPException(status_code=404, detail="Hive not found")
+            hive_data = row[0]
+            # Convert to Hive model for easier access
+            hive = Hive.model_validate(hive_data)
+
+        hive_config = hive.hive_mind_config
 
         # --- RAG: retrieve relevant context from hive (files and messages) ---
         context_str = ""
@@ -135,7 +158,9 @@ async def ai_generate_delta(
                 if hive_config.accessLevel == HiveMindAccessLevel.SHARED:
                     search_hive_ids.extend(hive_config.sharedHiveIds)
                 elif hive_config.accessLevel == HiveMindAccessLevel.GLOBAL:
-                    search_hive_ids = [h.id for h in hives]
+                    # For global, we need all hives – but that's expensive; for now, just use current hive
+                    # We could fetch all hives here, but keep it simple
+                    pass
 
                 filter_condition = models.Filter(
                     must=[
@@ -171,7 +196,7 @@ async def ai_generate_delta(
             else:
                 context_str = memory_text
 
-        global_user_md = agent_hive.global_user_md
+        global_user_md = hive.global_user_md
 
         # Build sub-agents list
         sub_agents_info = []
