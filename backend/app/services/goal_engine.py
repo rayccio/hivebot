@@ -1,9 +1,7 @@
-# backend/app/services/goal_engine.py
 import uuid
 from datetime import datetime
 from typing import Optional, List
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, text
+from sqlalchemy import text
 from ..core.database import AsyncSessionLocal
 from ..models.types import HiveGoal, HiveGoalStatus
 import logging
@@ -47,7 +45,8 @@ class GoalEngine:
             )
             row = result.fetchone()
             if row:
-                return HiveGoal.model_validate_json(row[0])
+                # row[0] is already a dict (JSONB deserialized by asyncpg)
+                return HiveGoal.model_validate(row[0])
         return None
 
     async def update_goal_status(self, goal_id: str, status: HiveGoalStatus) -> Optional[HiveGoal]:
@@ -72,9 +71,8 @@ class GoalEngine:
                 {"hive_id": hive_id}
             )
             rows = result.fetchall()
-            return [HiveGoal.model_validate_json(r[0]) for r in rows]
+            return [HiveGoal.model_validate(r[0]) for r in rows]
 
-    # ==================== NEW METHOD ====================
     async def list_goals_by_status(self, statuses: List[HiveGoalStatus]) -> List[HiveGoal]:
         """List goals with any of the given statuses."""
         status_strings = [s.value for s in statuses]
@@ -84,4 +82,4 @@ class GoalEngine:
                 {"statuses": status_strings}
             )
             rows = result.fetchall()
-            return [HiveGoal.model_validate_json(r[0]) for r in rows]
+            return [HiveGoal.model_validate(r[0]) for r in rows]

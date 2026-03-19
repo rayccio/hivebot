@@ -42,14 +42,12 @@ class ArtifactService:
         status: str = "draft"
     ) -> HiveArtifact:
         """Create a new artifact (new version)."""
-        # Validate file_path to prevent directory traversal
         if ".." in file_path or file_path.startswith("/"):
             raise ValueError("Invalid file path")
 
         version = await self._get_next_version(goal_id, task_id, file_path)
         artifact_id = f"art-{uuid.uuid4().hex[:8]}"
 
-        # Save file to disk under artifact_id
         artifact_file = self.base_path / artifact_id
         async with aiofiles.open(artifact_file, "wb") as f:
             await f.write(content)
@@ -59,7 +57,7 @@ class ArtifactService:
             goal_id=goal_id,
             task_id=task_id,
             file_path=file_path,
-            content="",  # Not storing content in DB; file is on disk
+            content="",
             version=version,
             status=status,
             created_at=datetime.utcnow()
@@ -83,11 +81,10 @@ class ArtifactService:
             )
             row = result.fetchone()
             if row:
-                return HiveArtifact.model_validate_json(row[0])
+                return HiveArtifact.model_validate(row[0])
         return None
 
     async def list_artifacts(self, goal_id: str, task_id: Optional[str] = None) -> List[HiveArtifact]:
-        """List artifacts for a goal, optionally filtered by task."""
         async with AsyncSessionLocal() as session:
             query = "SELECT data FROM artifacts WHERE data->>'goal_id' = :goal_id"
             params = {"goal_id": goal_id}
@@ -97,10 +94,9 @@ class ArtifactService:
             query += " ORDER BY (data->>'created_at')::timestamptz DESC"
             result = await session.execute(text(query), params)
             rows = result.fetchall()
-            return [HiveArtifact.model_validate_json(r[0]) for r in rows]
+            return [HiveArtifact.model_validate(r[0]) for r in rows]
 
     async def get_latest_artifact(self, goal_id: str, task_id: str, file_path: str) -> Optional[HiveArtifact]:
-        """Get the latest version of a specific file."""
         async with AsyncSessionLocal() as session:
             result = await session.execute(
                 text("""
@@ -115,7 +111,7 @@ class ArtifactService:
             )
             row = result.fetchone()
             if row:
-                return HiveArtifact.model_validate_json(row[0])
+                return HiveArtifact.model_validate(row[0])
         return None
 
     async def update_artifact_status(self, artifact_id: str, status: str) -> Optional[HiveArtifact]:
@@ -135,11 +131,9 @@ class ArtifactService:
         artifact = await self.get_artifact(artifact_id)
         if not artifact:
             return False
-        # Delete file
         artifact_file = self.base_path / artifact_id
         if artifact_file.exists():
             artifact_file.unlink()
-        # Delete DB record
         async with AsyncSessionLocal() as session:
             await session.execute(
                 text("DELETE FROM artifacts WHERE id = :id"),
@@ -150,7 +144,6 @@ class ArtifactService:
         return True
 
     async def read_artifact_content(self, artifact_id: str) -> Optional[bytes]:
-        """Read the file content of an artifact."""
         artifact_file = self.base_path / artifact_id
         if not artifact_file.exists():
             return None
