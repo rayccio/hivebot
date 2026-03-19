@@ -8,6 +8,7 @@ import httpx
 from datetime import datetime, timedelta
 from aiohttp import web
 
+# Set logging to INFO level
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("hive-core")
 
@@ -41,7 +42,6 @@ async def wait_for_db(pg_pool, retries=30, delay=2):
     for attempt in range(retries):
         try:
             async with pg_pool.acquire() as conn:
-                # Check if agents table exists
                 result = await conn.fetchval("""
                     SELECT EXISTS (
                         SELECT FROM information_schema.tables 
@@ -73,8 +73,15 @@ async def start_health_server():
 async def populate_pending_tasks(pg_pool, redis_client):
     """Load all pending tasks from DB and add to Redis sorted set."""
     async with pg_pool.acquire() as conn:
-        rows = await conn.fetch("SELECT id, created_at FROM tasks WHERE data->>'status' = 'pending'")
+        rows = await conn.fetch("SELECT id, data, created_at FROM tasks WHERE data->>'status' = 'pending'")
+        logger.info(f"Found {len(rows)} pending tasks in DB")
         for row in rows:
+            # Log first task keys for debugging
+            if rows.index(row) == 0:
+                task_data = row['data']
+                if isinstance(task_data, str):
+                    task_data = json.loads(task_data)
+                logger.info(f"Sample task keys: {list(task_data.keys())}")
             score = row['created_at'].timestamp() * 1000
             await redis_client.zadd("tasks:pending", {row['id']: score})
     logger.info(f"Populated {len(rows)} pending tasks into Redis")
@@ -92,17 +99,42 @@ async def fetch_goals(pg_pool, statuses):
     async with pg_pool.acquire() as conn:
         rows = await conn.fetch(
             "SELECT data FROM goals WHERE data->>'status' = ANY($1)",
-            [statuses]
+            statuses
         )
-        return [json.loads(r['data']) for r in rows]
+        goals = []
+        for r in rows:
+            goal_data = r['data']
+            if isinstance(goal_data, str):
+                goal_data = json.loads(goal_data)
+            goals.append(goal_data)
+        return goals
 
 async def fetch_tasks_for_goal(pg_pool, goal_id):
-    """Fetch all tasks for a goal."""
+    """Fetch all tasks for a goal, trying both possible JSON keys."""
     async with pg_pool.acquire() as conn:
+        # Try with goalId first (camelCase)
         rows = await conn.fetch(
             "SELECT data FROM tasks WHERE data->>'goalId' = $1",
             goal_id
         )
+        if rows:
+            logger.debug(f"Found {len(rows)} tasks using key 'goalId' for goal {goal_id}")
+        else:
+            # Try with goal_id (snake_case)
+            rows = await conn.fetch(
+                "SELECT data FROM tasks WHERE data->>'goal_id' = $1",
+                goal_id
+            )
+            if rows:
+                logger.debug(f"Found {len(rows)} tasks using key 'goal_id' for goal {goal_id}")
+            else:
+                # No tasks found – log the keys of a sample task if any exist
+                sample = await conn.fetch("SELECT data FROM tasks LIMIT 1")
+                if sample:
+                    sample_data = sample[0]['data']
+                    if isinstance(sample_data, str):
+                        sample_data = json.loads(sample_data)
+                    logger.info(f"No tasks for goal {goal_id}. Sample task keys: {list(sample_data.keys())}")
         tasks = []
         for r in rows:
             data = r['data']
@@ -110,22 +142,6 @@ async def fetch_tasks_for_goal(pg_pool, goal_id):
                 data = json.loads(data)
             tasks.append(data)
         return tasks
-
-async def fetch_task_edges(pg_pool, goal_id):
-    """Fetch all edges for tasks of a goal."""
-    async with pg_pool.acquire() as conn:
-        task_ids = await conn.fetch(
-            "SELECT id FROM tasks WHERE data->>'goalId' = $1",
-            goal_id
-        )
-        task_ids = [t['id'] for t in task_ids]
-        if not task_ids:
-            return []
-        rows = await conn.fetch(
-            "SELECT from_task, to_task FROM task_edges WHERE from_task = ANY($1) OR to_task = ANY($1)",
-            task_ids
-        )
-        return [{"from": r['from_task'], "to": r['to_task']} for r in rows]
 
 async def are_dependencies_met(pg_pool, task_id, depends_on):
     """Check if all dependencies of a task are completed."""
@@ -146,7 +162,8 @@ async def are_dependencies_met(pg_pool, task_id, depends_on):
 
 async def spawn_agent_for_task(hive_id, required_skill_ids, agent_type):
     """Call internal API to spawn an agent."""
-    url = f"{ORCHESTRATOR_URL}/api/v1/internal/agents/spawn"
+    # Correct URL includes /ai/ after /internal/
+    url = f"{ORCHESTRATOR_URL}/api/v1/internal/ai/agents/spawn"
     headers = {"Authorization": f"Bearer {INTERNAL_API_KEY}"}
     payload = {
         "hive_id": hive_id,
@@ -155,10 +172,16 @@ async def spawn_agent_for_task(hive_id, required_skill_ids, agent_type):
     }
     async with httpx.AsyncClient() as client:
         try:
+            logger.info(f"Spawning agent for hive {hive_id}, skills {required_skill_ids}, type {agent_type}")
             resp = await client.post(url, json=payload, headers=headers, timeout=30)
             resp.raise_for_status()
             data = resp.json()
-            return data.get("agent_id")
+            agent_id = data.get("agent_id")
+            logger.info(f"Agent spawned: {agent_id}")
+            return agent_id
+        except httpx.HTTPStatusError as e:
+            logger.error(f"HTTP error spawning agent: {e.response.status_code} - {e.response.text}")
+            return None
         except Exception as e:
             logger.error(f"Failed to spawn agent: {e}")
             return None
@@ -228,7 +251,6 @@ async def handle_task_completion(pg_pool, redis_client, goal_id, task_id, output
         )
         for row in rows:
             dep_task_id = row['to_task']
-            # Fetch the dependent task
             dep_row = await conn.fetchrow("SELECT data FROM tasks WHERE id = $1", dep_task_id)
             if not dep_row:
                 continue
@@ -237,10 +259,8 @@ async def handle_task_completion(pg_pool, redis_client, goal_id, task_id, output
                 dep_data = json.loads(dep_data)
             if dep_data['status'] != 'pending':
                 continue
-            # Check if all its dependencies are met
             depends_on = dep_data.get('depends_on', [])
             if await are_dependencies_met(pg_pool, dep_task_id, depends_on):
-                # Push to pending queue
                 created_at = datetime.fromisoformat(dep_data['created_at'])
                 score = created_at.timestamp() * 1000
                 await redis_client.zadd("tasks:pending", {dep_task_id: score})
@@ -249,7 +269,7 @@ async def handle_task_completion(pg_pool, redis_client, goal_id, task_id, output
     # Check if goal is complete
     async with pg_pool.acquire() as conn:
         rows = await conn.fetch(
-            "SELECT data FROM tasks WHERE data->>'goalId' = $1",
+            "SELECT data FROM tasks WHERE data->>'goalId' = $1 OR data->>'goal_id' = $1",
             goal_id
         )
         all_tasks = []
@@ -267,20 +287,16 @@ async def handle_task_completion(pg_pool, redis_client, goal_id, task_id, output
 
 async def orchestrator_loop(pg_pool, redis_client):
     """Main orchestrator loop: process goals and assign tasks."""
+    logger.info("Orchestrator loop started")
     while True:
         try:
-            logger.debug("Orchestrator loop iteration")
-            # Fetch all goals that are planning or executing
+            logger.info("Orchestrator loop iteration")
             goals = await fetch_goals(pg_pool, ["planning", "executing"])
-            logger.debug(f"Fetched {len(goals)} goals")
+            logger.info(f"Fetched {len(goals)} goals with status planning/executing")
             for goal in goals:
                 goal_id = goal['id']
-                # Fetch all tasks for this goal
                 tasks = await fetch_tasks_for_goal(pg_pool, goal_id)
-                logger.debug(f"Goal {goal_id} has {len(tasks)} tasks")
-                # Build task map
-                task_map = {t['id']: t for t in tasks}
-                # Find ready tasks (pending and dependencies satisfied)
+                logger.info(f"Goal {goal_id} has {len(tasks)} tasks")
                 ready_tasks = []
                 for t in tasks:
                     if t['status'] != 'pending':
@@ -288,12 +304,11 @@ async def orchestrator_loop(pg_pool, redis_client):
                     if await are_dependencies_met(pg_pool, t['id'], t.get('depends_on', [])):
                         ready_tasks.append(t)
 
-                logger.debug(f"Goal {goal_id} has {len(ready_tasks)} ready tasks")
+                logger.info(f"Goal {goal_id} has {len(ready_tasks)} ready tasks")
                 for task in ready_tasks:
-                    # Try to find an idle agent with required skills
                     required_skills = task.get('required_skills', [])
-                    # Get idle agents from Redis
                     idle_agent_ids = await redis_client.smembers("agents:idle")
+                    logger.info(f"Idle agents count: {len(idle_agent_ids)}")
                     if not idle_agent_ids:
                         logger.info(f"No idle agents, spawning new agent for task {task['id']}")
                         agent_id = await spawn_agent_for_task(
@@ -306,7 +321,6 @@ async def orchestrator_loop(pg_pool, redis_client):
                         else:
                             logger.warning(f"Failed to spawn agent for task {task['id']}")
                     else:
-                        # Fetch agent data to check skills
                         async with pg_pool.acquire() as conn:
                             rows = await conn.fetch(
                                 "SELECT id, data FROM agents WHERE id = ANY($1)",
@@ -384,7 +398,6 @@ async def maintenance_loop(pg_pool, redis_client):
         # Handle timed-out tasks (assigned but not completed)
         now = datetime.utcnow()
         async with pg_pool.acquire() as conn:
-            # Find tasks that are assigned and started more than TASK_TIMEOUT_SECONDS ago
             rows = await conn.fetch("""
                 SELECT id, data FROM tasks
                 WHERE data->>'status' = 'assigned'
@@ -399,7 +412,6 @@ async def maintenance_loop(pg_pool, redis_client):
                     task_data = raw_data
                 agent_id = task_data.get('assigned_agent_id')
                 logger.warning(f"Task {task_id} timed out, re-queuing")
-                # Reset task status
                 task_data['status'] = 'pending'
                 task_data['assigned_agent_id'] = None
                 task_data.pop('started_at', None)
@@ -407,14 +419,11 @@ async def maintenance_loop(pg_pool, redis_client):
                     "UPDATE tasks SET data = $1 WHERE id = $2",
                     json.dumps(task_data), task_id
                 )
-                # Re-add to pending queue (using original created_at as score)
                 created_at = datetime.fromisoformat(task_data['created_at'])
                 score = created_at.timestamp() * 1000
                 await redis_client.zadd("tasks:pending", {task_id: score})
-                # Remove agent from idle set if it was there? Actually agent may be dead; we'll handle separately.
                 if agent_id:
                     await redis_client.srem("agents:idle", agent_id)
-                    # Optionally mark agent as error
                     agent_row = await conn.fetchrow("SELECT data FROM agents WHERE id = $1", agent_id)
                     if agent_row:
                         raw_agent = agent_row['data']
@@ -432,28 +441,19 @@ async def main():
     pg_pool = await asyncpg.create_pool(POSTGRES_DSN)
     redis_client = await redis.from_url(f"redis://{REDIS_HOST}:{REDIS_PORT}", decode_responses=True)
 
-    # Wait for database tables to be ready
     await wait_for_db(pg_pool)
 
-    # Start health server
     asyncio.create_task(start_health_server())
 
-    # Initial population
     await populate_pending_tasks(pg_pool, redis_client)
     await populate_idle_agents(pg_pool, redis_client)
 
-    # Start maintenance loop
     asyncio.create_task(maintenance_loop(pg_pool, redis_client))
-
-    # Start task completion listener
     asyncio.create_task(listen_for_task_completions(pg_pool, redis_client))
-
-    # Start orchestrator loop
     asyncio.create_task(orchestrator_loop(pg_pool, redis_client))
 
     logger.info("Hive Core orchestrator started")
 
-    # Keep running
     try:
         await asyncio.Event().wait()
     except asyncio.CancelledError:
