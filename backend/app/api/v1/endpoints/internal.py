@@ -66,9 +66,9 @@ async def verify_internal_token(authorization: Optional[str] = Header(None)):
 async def get_hive_for_agent(agent_id: str) -> Optional[str]:
     """Direct database query to find the hive containing this agent."""
     async with AsyncSessionLocal() as session:
-        # Use @> to check if the agent_ids array contains the agent_id
+        # Cast the JSON field to JSONB and use @> to check array containment
         result = await session.execute(
-            text("SELECT data FROM hives WHERE data->'agent_ids' @> to_jsonb(ARRAY[:agent_id])"),
+            text("SELECT data FROM hives WHERE (data->'agent_ids')::jsonb @> to_jsonb(ARRAY[:agent_id])"),
             {"agent_id": agent_id}
         )
         row = result.fetchone()
