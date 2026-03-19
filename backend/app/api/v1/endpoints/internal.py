@@ -1,3 +1,4 @@
+# backend/app/api/v1/endpoints/internal.py
 from fastapi import APIRouter, HTTPException, Depends, Header, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -22,7 +23,6 @@ from sentence_transformers import SentenceTransformer
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/ai")
 
-# This log line confirms the module is imported and the router is created
 logger.info("Internal AI router loaded")
 
 # Load embedding model once at startup (module level)
@@ -42,13 +42,10 @@ class GenerateDeltaRequest(BaseModel):
 class GenerateResponse(BaseModel):
     response: str
 
-# ==================== NEW: SPAWN AGENT REQUEST ====================
 class SpawnAgentRequest(BaseModel):
     hive_id: str
     required_skill_ids: List[str]
     agent_type: str
-
-# ===================================================================
 
 async def verify_internal_token(authorization: Optional[str] = Header(None)):
     if not authorization:
@@ -66,27 +63,24 @@ async def verify_internal_token(authorization: Optional[str] = Header(None)):
 async def get_hive_for_agent(agent_id: str) -> Optional[str]:
     """Direct database query to find the hive containing this agent."""
     async with AsyncSessionLocal() as session:
-        # Cast the JSON field to JSONB and use @> to check array containment
+        # Use the camelCase key 'agentIds' as stored by model_dump(by_alias=True)
         result = await session.execute(
-            text("SELECT data FROM hives WHERE (data->'agent_ids')::jsonb @> to_jsonb(ARRAY[:agent_id])"),
+            text("SELECT data FROM hives WHERE (data->'agentIds')::jsonb @> to_jsonb(ARRAY[:agent_id])"),
             {"agent_id": agent_id}
         )
         row = result.fetchone()
         if row:
             hive_data = row[0]
-            # row[0] is already a dict (deserialized by asyncpg)
             return hive_data.get("id")
     return None
 
 @router.get("/ping")
 async def ping():
-    """Simple endpoint to check if the internal router is mounted."""
     logger.info("Ping endpoint called")
     return {"status": "ok"}
 
 @router.get("/")
 async def root():
-    """Root of internal AI router – for debugging."""
     logger.info("Internal AI root called")
     return {"message": "Internal AI router is mounted"}
 
@@ -96,15 +90,12 @@ async def ai_generate_delta(
     token: str = Depends(verify_internal_token)
 ):
     logger.info(f"Generate-delta called for agent {request.agent_id}")
-
-    # Wrap everything in a try/except to catch and log any exception
     try:
         agent_id = request.agent_id
         user_input = request.input
         config = request.config
         system_override = request.system_prompt_override
 
-        # Log before Redis calls
         logger.info(f"Fetching conversation for agent {agent_id} from Redis")
         conversation = await redis_service.get_conversation(agent_id, limit=50)
 
@@ -116,7 +107,6 @@ async def ai_generate_delta(
         await redis_service.push_conversation_message(agent_id, user_msg)
         logger.info(f"Conversation updated for agent {agent_id}")
 
-        # Get agent from DB
         logger.info(f"Fetching agent {agent_id} from database...")
         docker_service = DockerService()
         agent_manager = AgentManager(docker_service)
@@ -143,23 +133,19 @@ async def ai_generate_delta(
                 logger.error(f"Hive {hive_id} not found")
                 raise HTTPException(status_code=404, detail="Hive not found")
             hive_data = row[0]
-            # Convert to Hive model for easier access
             hive = Hive.model_validate(hive_data)
 
         hive_config = hive.hive_mind_config
 
-        # --- RAG: retrieve relevant context from hive (files and messages) ---
+        # RAG: retrieve relevant context from hive (files and messages)
         context_str = ""
         if embedding_model is not None:
             try:
                 query_vector = embedding_model.encode(user_input).tolist()
-                # Determine which hive_ids to search
                 search_hive_ids = [hive_id]
                 if hive_config.accessLevel == HiveMindAccessLevel.SHARED:
                     search_hive_ids.extend(hive_config.sharedHiveIds)
                 elif hive_config.accessLevel == HiveMindAccessLevel.GLOBAL:
-                    # For global, we need all hives – but that's expensive; for now, just use current hive
-                    # We could fetch all hives here, but keep it simple
                     pass
 
                 filter_condition = models.Filter(
@@ -187,7 +173,6 @@ async def ai_generate_delta(
                 logger.error(f"Vector search failed: {e}")
                 context_str = ""
 
-        # --- NEW: Get long‑term memories for this agent ---
         long_term_memories = await agent_manager.get_long_term_memory(agent_id, user_input, limit=3)
         if long_term_memories:
             memory_text = "\n\n".join([f"Past memory: {m}" for m in long_term_memories])
@@ -198,7 +183,6 @@ async def ai_generate_delta(
 
         global_user_md = hive.global_user_md
 
-        # Build sub-agents list
         sub_agents_info = []
         if agent.sub_agent_ids:
             for sub_id in agent.sub_agent_ids:
@@ -224,7 +208,6 @@ async def ai_generate_delta(
             "If you are unsure, ask the user to specify the target agent and the channel (if needed)."
         )
 
-        # Use system override if provided, otherwise build from agent data
         if system_override:
             system_content = system_override
         else:
@@ -276,29 +259,23 @@ IMPORTANT: You are NOT a generic AI assistant. You are the entity described abov
 
         await redis_service.trim_conversation(agent_id, keep_last=100)
 
-        # --- Trigger embedding for the new assistant message (short‑term memory) ---
         await trigger_message_embedding(agent_id, hive_id, response, datetime.utcnow().isoformat())
 
         logger.info(f"Generate-delta completed for agent {agent_id}")
         return GenerateResponse(response=response)
 
     except HTTPException:
-        # Re-raise HTTP exceptions as they are (they already have the desired status code)
         raise
     except Exception as e:
-        # Log the full traceback for any other exception
         logger.error(f"Unhandled exception in generate-delta for agent {request.agent_id}: {e}")
         logger.error(traceback.format_exc())
-        # Return a 500 error
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
-# ==================== NEW ENDPOINT: SPAWN AGENT ====================
 @router.post("/agents/spawn", response_model=dict)
 async def spawn_agent(
     request: SpawnAgentRequest,
     token: str = Depends(verify_internal_token)
 ):
-    """Internal endpoint to spawn a new agent for a task."""
     from ....services.agent_manager import AgentManager
     from ....services.docker_service import DockerService
     docker = DockerService()
@@ -312,12 +289,9 @@ async def spawn_agent(
         raise HTTPException(status_code=500, detail="Failed to spawn agent")
     return {"agent_id": agent.id}
 
-# ==================== CATCH-ALL FOR DEBUGGING ====================
 @router.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
 async def catch_all(request: Request, path: str):
-    """Catch-all route to log any unmatched requests to this router."""
     logger.error(f"Internal AI router catch-all: method={request.method}, path={path}, full_url={request.url}")
-    # Attempt to read body for POST requests
     body = None
     if request.method in ("POST", "PUT", "PATCH"):
         try:

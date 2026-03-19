@@ -1,3 +1,4 @@
+# backend/app/services/hive_manager.py
 import json
 import os
 from typing import Dict, Optional, List
@@ -5,7 +6,7 @@ from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from ..models.types import Hive, HiveCreate, HiveUpdate, Agent, Message, FileEntry
-from ..models.types import HiveTaskStatus  # <-- changed from TaskStatus
+from ..models.types import HiveTaskStatus
 from ..core.config import settings
 from ..core.database import AsyncSessionLocal
 from ..repositories.hive_repository import HiveRepository
@@ -35,20 +36,19 @@ class HiveManager:
         hive_dir.mkdir(parents=True, exist_ok=True)
 
         now = datetime.utcnow()
-        # Store only agent_ids in the JSON
-        hive_data = {
-            "id": hive_id,
-            "name": hive_in.name,
-            "description": hive_in.description,
-            "agent_ids": [],  # will be populated later
-            "global_user_md": hive_in.global_user_md,
-            "messages": [],
-            "global_files": [],
-            "hive_mind_config": {"access_level": "ISOLATED", "shared_hive_ids": []},
-            "created_at": now.isoformat(),
-            "updated_at": now.isoformat()
-        }
-        hive = Hive(**hive_data)  # this will set agents=[], but we'll override later
+        # Create hive object with empty agent_ids and agents
+        hive = Hive(
+            id=hive_id,
+            name=hive_in.name,
+            description=hive_in.description,
+            agent_ids=[],                           # persisted list of IDs
+            global_user_md=hive_in.global_user_md,
+            messages=[],
+            global_files=[],
+            hive_mind_config={"access_level": "ISOLATED", "shared_hive_ids": []},
+            created_at=now,
+            updated_at=now
+        )
         repo, session = await self._get_session_and_repo()
         try:
             created = await repo.create(hive)
@@ -63,8 +63,8 @@ class HiveManager:
             hive = await repo.get(hive_id)
             if not hive:
                 return None
-            # Fetch agents from agent_ids
-            agent_ids = hive.dict().get("agent_ids", [])
+            # Populate agents from agent_ids
+            agent_ids = hive.agent_ids
             agents = []
             if agent_ids:
                 agent_repo = await self._get_agent_repo(session)
@@ -72,7 +72,6 @@ class HiveManager:
                     agent = await agent_repo.get(aid)
                     if agent:
                         agents.append(agent)
-            # Replace agent_ids with full agents list in the returned Hive object
             hive.agents = agents
             return hive
         finally:
@@ -84,7 +83,7 @@ class HiveManager:
             hives = await repo.get_all()
             agent_repo = await self._get_agent_repo(session)
             for hive in hives:
-                agent_ids = hive.dict().get("agent_ids", [])
+                agent_ids = hive.agent_ids
                 agents = []
                 for aid in agent_ids:
                     agent = await agent_repo.get(aid)
@@ -98,25 +97,16 @@ class HiveManager:
     async def update_hive(self, hive_id: str, hive_update: HiveUpdate) -> Optional[Hive]:
         repo, session = await self._get_session_and_repo()
         try:
-            # Convert update to dict
-            update_data = hive_update.dict(exclude_unset=True)
-            # If agents are updated, we need to handle agent_ids
-            if "agents" in update_data:
-                # We assume the update includes a list of full Agent objects; we store only their IDs
-                agent_ids = [a.id for a in update_data["agents"]]
-                update_data["agent_ids"] = agent_ids
-                del update_data["agents"]  # don't store full objects
-            # For other fields, they map directly
             hive = await repo.get(hive_id)
             if not hive:
                 return None
-            # Update the hive data
-            current_data = hive.dict()
-            current_data.update(update_data)
-            current_data["updated_at"] = datetime.utcnow().isoformat()
-            updated_hive = Hive(**current_data)
-            await repo.update(hive_id, updated_hive.dict(by_alias=True))
-            # Return with agents populated
+            # Apply updates (agent_ids is not updated here, only via add/remove)
+            update_data = hive_update.model_dump(exclude_unset=True)
+            for field, value in update_data.items():
+                if hasattr(hive, field):
+                    setattr(hive, field, value)
+            hive.updated_at = datetime.utcnow()
+            await repo.update(hive_id, hive.model_dump(by_alias=True))
             return await self.get_hive(hive_id)
         finally:
             await session.close()
@@ -139,17 +129,10 @@ class HiveManager:
             hive = await repo.get(hive_id)
             if not hive:
                 return None
-            # Get current agent_ids
-            agent_ids = hive.dict().get("agent_ids", [])
-            if agent.id not in agent_ids:
-                agent_ids.append(agent.id)
-                # Update the hive data
-                current_data = hive.dict()
-                current_data["agent_ids"] = agent_ids
-                current_data["updated_at"] = datetime.utcnow().isoformat()
-                updated_hive = Hive(**current_data)
-                await repo.update(hive_id, updated_hive.dict(by_alias=True))
-            # Return with agents populated
+            if agent.id not in hive.agent_ids:
+                hive.agent_ids.append(agent.id)
+                hive.updated_at = datetime.utcnow()
+                await repo.update(hive_id, hive.model_dump(by_alias=True))
             return await self.get_hive(hive_id)
         finally:
             await session.close()
@@ -160,36 +143,27 @@ class HiveManager:
             hive = await repo.get(hive_id)
             if not hive:
                 return None
-            agent_ids = hive.dict().get("agent_ids", [])
-            if agent_id in agent_ids:
-                agent_ids.remove(agent_id)
-                current_data = hive.dict()
-                current_data["agent_ids"] = agent_ids
-                current_data["updated_at"] = datetime.utcnow().isoformat()
-                updated_hive = Hive(**current_data)
-                await repo.update(hive_id, updated_hive.dict(by_alias=True))
+            if agent_id in hive.agent_ids:
+                hive.agent_ids.remove(agent_id)
+                hive.updated_at = datetime.utcnow()
+                await repo.update(hive_id, hive.model_dump(by_alias=True))
             return await self.get_hive(hive_id)
         finally:
             await session.close()
 
-    # For messages and global files, we similarly store them as lists of objects in the hive JSON
-    # Since they are small, we can keep them as full objects (no separate tables)
     async def add_message(self, hive_id: str, message: Message) -> Optional[Hive]:
         repo, session = await self._get_session_and_repo()
         try:
             hive = await repo.get(hive_id)
             if not hive:
                 return None
-            messages = hive.dict().get("messages", [])
-            messages.append(message.dict())
-            # Keep only last 100
+            messages = hive.messages
+            messages.append(message)
             if len(messages) > 100:
                 messages = messages[-100:]
-            current_data = hive.dict()
-            current_data["messages"] = messages
-            current_data["updated_at"] = datetime.utcnow().isoformat()
-            updated_hive = Hive(**current_data)
-            await repo.update(hive_id, updated_hive.dict(by_alias=True))
+            hive.messages = messages
+            hive.updated_at = datetime.utcnow()
+            await repo.update(hive_id, hive.model_dump(by_alias=True))
             return await self.get_hive(hive_id)
         finally:
             await session.close()
@@ -200,13 +174,11 @@ class HiveManager:
             hive = await repo.get(hive_id)
             if not hive:
                 return None
-            files = hive.dict().get("global_files", [])
-            files.append(file_entry.dict())
-            current_data = hive.dict()
-            current_data["global_files"] = files
-            current_data["updated_at"] = datetime.utcnow().isoformat()
-            updated_hive = Hive(**current_data)
-            await repo.update(hive_id, updated_hive.dict(by_alias=True))
+            files = hive.global_files
+            files.append(file_entry)
+            hive.global_files = files
+            hive.updated_at = datetime.utcnow()
+            await repo.update(hive_id, hive.model_dump(by_alias=True))
             return await self.get_hive(hive_id)
         finally:
             await session.close()
@@ -217,20 +189,15 @@ class HiveManager:
             hive = await repo.get(hive_id)
             if not hive:
                 return None
-            files = hive.dict().get("global_files", [])
-            files = [f for f in files if f.get("id") != file_id]
-            current_data = hive.dict()
-            current_data["global_files"] = files
-            current_data["updated_at"] = datetime.utcnow().isoformat()
-            updated_hive = Hive(**current_data)
-            await repo.update(hive_id, updated_hive.dict(by_alias=True))
+            files = [f for f in hive.global_files if f.id != file_id]
+            hive.global_files = files
+            hive.updated_at = datetime.utcnow()
+            await repo.update(hive_id, hive.model_dump(by_alias=True))
             return await self.get_hive(hive_id)
         finally:
             await session.close()
 
-    # --- NEW: Get agents currently executing tasks for this hive ---
     async def get_active_agents(self, hive_id: str) -> List[Agent]:
-        """Return agents currently executing tasks for this hive."""
         task_manager = TaskManager()
         tasks = await task_manager.list_tasks_for_hive(hive_id)
         active_agent_ids = set()

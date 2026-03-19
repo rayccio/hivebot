@@ -10,7 +10,7 @@ class AgentStatus(str, Enum):
     RUNNING = "RUNNING"
     ERROR = "ERROR"
     OFFLINE = "OFFLINE"
-    ASSIGNED = "ASSIGNED"          # NEW: task assigned but not yet started
+    ASSIGNED = "ASSIGNED"
 
 class ReportingTarget(str, Enum):
     PARENT = "PARENT_AGENT"
@@ -27,7 +27,6 @@ class UserRole(str, Enum):
     HIVE_ADMIN = "HIVE_ADMIN"
     HIVE_USER = "HIVE_USER"
 
-# ==================== NEW AGENT ROLE ENUM ====================
 class AgentRole(str, Enum):
     GENERIC = "generic"
     BUILDER = "builder"
@@ -37,16 +36,12 @@ class AgentRole(str, Enum):
     ARCHITECT = "architect"
     RESEARCHER = "researcher"
 
-# ==================== NEW ORGANIZATION ROLE ENUM ====================
 class OrgRole(str, Enum):
     CEO = "ceo"
     STRATEGY = "strategy"
     DEPARTMENT_HEAD = "department_head"
     MEMBER = "member"
 
-# ==============================================================
-
-# Channel types and configurations
 ChannelType = Literal["telegram", "discord", "whatsapp", "slack", "custom"]
 
 class ChannelCredentials(BaseModel):
@@ -56,7 +51,7 @@ class ChannelCredentials(BaseModel):
     api_key: Optional[str] = None
     api_secret: Optional[str] = None
     client_id: Optional[str] = None
-    mode: Optional[str] = None  # "auto", "webhook", "polling"
+    mode: Optional[str] = None
 
     model_config = ConfigDict(
         populate_by_name=True,
@@ -74,7 +69,7 @@ class ChannelConfig(BaseModel):
 class FileEntry(BaseModel):
     id: str
     name: str
-    type: str  # file extension, e.g., 'txt', 'png', 'pdf'
+    type: str
     content: str
     size: int
     uploaded_at: datetime
@@ -85,7 +80,7 @@ class AgentMemory(BaseModel):
     token_count: float = 0
 
 class ReasoningConfig(BaseModel):
-    model: str  # provider:model, e.g., "openai:gpt-4o"
+    model: str
     temperature: float = 0.7
     top_p: float = 1.0
     max_tokens: int = 150
@@ -95,7 +90,6 @@ class ReasoningConfig(BaseModel):
     use_global_default: bool = False
     use_custom_max_tokens: bool = False
 
-# --- Skill Models ---
 class AgentSkill(BaseModel):
     agent_id: str
     skill_id: str
@@ -105,7 +99,6 @@ class AgentSkill(BaseModel):
     enabled: bool = True
 
 class MetaInfo(BaseModel):
-    """Metadata for self‑improvement tracking."""
     parent_agent: Optional[str] = None
     improved: bool = False
     simulation: bool = False
@@ -119,7 +112,7 @@ class MetaInfo(BaseModel):
 class Agent(BaseModel):
     id: str
     name: str
-    role: AgentRole  # <-- changed from str to AgentRole
+    role: AgentRole
     soul_md: str = Field(alias="soulMd")
     identity_md: str = Field(alias="identityMd")
     tools_md: str = Field(alias="toolsMd")
@@ -136,7 +129,6 @@ class Agent(BaseModel):
     local_files: List[FileEntry] = []
     skills: List[AgentSkill] = []
     meta: MetaInfo = Field(default_factory=MetaInfo)
-    # ==================== NEW ORGANIZATION FIELDS ====================
     org_role: OrgRole = OrgRole.MEMBER
     department: Optional[str] = None
 
@@ -162,7 +154,7 @@ class Message(BaseModel):
 
 class AgentCreate(BaseModel):
     name: str
-    role: AgentRole = AgentRole.GENERIC  # <-- default to generic
+    role: AgentRole = AgentRole.GENERIC
     soul_md: str = Field(alias="soulMd")
     identity_md: str = Field(alias="identityMd")
     tools_md: str = Field(alias="toolsMd")
@@ -171,7 +163,6 @@ class AgentCreate(BaseModel):
     parent_id: Optional[str] = None
     user_uid: Optional[str] = None
     channels: List[ChannelConfig] = []
-    # ==================== NEW ORGANIZATION FIELDS ====================
     org_role: OrgRole = OrgRole.MEMBER
     department: Optional[str] = None
 
@@ -183,7 +174,7 @@ class AgentCreate(BaseModel):
 
 class AgentUpdate(BaseModel):
     name: Optional[str] = None
-    role: Optional[AgentRole] = None  # <-- changed to AgentRole
+    role: Optional[AgentRole] = None
     soul_md: Optional[str] = Field(None, alias="soulMd")
     identity_md: Optional[str] = Field(None, alias="identityMd")
     tools_md: Optional[str] = Field(None, alias="toolsMd")
@@ -195,7 +186,6 @@ class AgentUpdate(BaseModel):
     memory: Optional[AgentMemory] = None
     local_files: Optional[List[FileEntry]] = None
     meta: Optional[MetaInfo] = None
-    # ==================== NEW ORGANIZATION FIELDS ====================
     org_role: Optional[OrgRole] = None
     department: Optional[str] = None
 
@@ -204,10 +194,6 @@ class AgentUpdate(BaseModel):
         populate_by_name=True,
         use_enum_values=True
     )
-
-# ----------------------------
-# Provider Configuration Models
-# ----------------------------
 
 class ProviderModel(BaseModel):
     id: str
@@ -237,22 +223,16 @@ class ProviderStatusResponse(BaseModel):
     primary_model_id: Optional[str] = None
     utility_model_id: Optional[str] = None
 
-# ----------------------------
-# Conversation Message for Delta Updates
-# ----------------------------
 class ConversationMessage(BaseModel):
     role: Literal["user", "assistant", "system"]
     content: str
     timestamp: datetime
 
-# ----------------------------
-# Hive (Project) Models
-# ----------------------------
+# ==================== HIVE MODEL (UPDATED) ====================
 class HiveMindConfig(BaseModel):
     access_level: HiveMindAccessLevel = HiveMindAccessLevel.ISOLATED
     shared_hive_ids: List[str] = []
 
-    # 👇 Added to accept camelCase aliases from frontend
     model_config = ConfigDict(
         alias_generator=to_camel,
         populate_by_name=True,
@@ -263,7 +243,10 @@ class Hive(BaseModel):
     id: str
     name: str
     description: str = ""
-    agents: List[Agent] = []
+    # Persisted: list of agent IDs (camelCase in JSON)
+    agent_ids: List[str] = Field(default_factory=list, alias="agentIds")
+    # Computed field: full agent objects (excluded from serialization)
+    agents: List[Agent] = Field(default_factory=list, exclude=True)
     global_user_md: str = ""
     messages: List[Message] = []
     global_files: List[FileEntry] = []
@@ -274,7 +257,9 @@ class Hive(BaseModel):
     model_config = ConfigDict(
         alias_generator=to_camel,
         populate_by_name=True,
-        use_enum_values=True
+        use_enum_values=True,
+        # Exclude agents from all serialization methods
+        json_schema_extra={"exclude": {"agents"}}
     )
 
 class HiveCreate(BaseModel):
@@ -288,9 +273,6 @@ class HiveUpdate(BaseModel):
     global_user_md: Optional[str] = None
     hive_mind_config: Optional[HiveMindConfig] = None
 
-# ----------------------------
-# User Models
-# ----------------------------
 class UserAccount(BaseModel):
     id: str
     username: str
@@ -318,21 +300,15 @@ class UserLogin(BaseModel):
     username: str
     password: str
 
-# ----------------------------
-# Global Settings
-# ----------------------------
 class GlobalSettings(BaseModel):
     login_enabled: bool = False
     session_timeout: int = 30
     system_name: str = "HiveBot Orchestrator"
     maintenance_mode: bool = False
     default_agent_uid: str = "10001"
-    # Rate limiting – enabled by default with reasonable limits
     rate_limit_enabled: bool = True
-    rate_limit_requests: int = 100          # 100 requests per period
-    rate_limit_period_seconds: int = 60      # per 60 seconds (i.e., 1.67 req/sec)
-
-# ==================== NEW HIVE GOAL MODELS ====================
+    rate_limit_requests: int = 100
+    rate_limit_period_seconds: int = 60
 
 class HiveGoalStatus(str, Enum):
     CREATED = "created"
@@ -345,7 +321,7 @@ class HiveGoal(BaseModel):
     id: str
     hive_id: str
     description: str
-    constraints: Dict[str, Any] = {}          # e.g., budget, max_iterations
+    constraints: Dict[str, Any] = {}
     success_criteria: List[str] = []
     status: HiveGoalStatus
     created_at: datetime
@@ -368,11 +344,11 @@ class HiveTaskStatus(str, Enum):
 class HiveTask(BaseModel):
     id: str
     goal_id: str
-    hive_id: str                               # <-- ADDED
+    hive_id: str
     description: str
-    agent_type: str                           # "builder", "tester", "reviewer", etc.
+    agent_type: str
     status: HiveTaskStatus
-    depends_on: List[str] = []                # task IDs
+    depends_on: List[str] = []
     required_skills: List[str] = []
     assigned_agent_id: Optional[str] = None
     input_data: Dict[str, Any] = {}
@@ -395,7 +371,7 @@ class HiveArtifact(BaseModel):
     file_path: str
     content: str
     version: int = 1
-    status: str = "draft"                     # draft, tested, final
+    status: str = "draft"
     created_at: datetime
 
     model_config = ConfigDict(
@@ -403,11 +379,6 @@ class HiveArtifact(BaseModel):
         populate_by_name=True,
         use_enum_values=True
     )
-
-# ==================== END NEW MODELS ====================
-
-
-# ==================== EXECUTION LOG MODEL ====================
 
 class ExecutionLogLevel(str, Enum):
     INFO = "info"
@@ -431,13 +402,11 @@ class ExecutionLog(BaseModel):
         use_enum_values=True
     )
 
-# ==================== ECONOMY MODELS ====================
-
 class Currency(str, Enum):
     USD = "usd"
     EUR = "eur"
     GBP = "gbp"
-    SIM = "sim"  # simulation currency
+    SIM = "sim"
 
 class AccountType(str, Enum):
     HIVE = "hive"
@@ -459,7 +428,7 @@ class TransactionStatus(str, Enum):
 
 class EconomyAccount(BaseModel):
     id: str
-    owner_id: str          # hive_id or agent_id
+    owner_id: str
     owner_type: AccountType
     currency: Currency
     balance: float = 0.0
@@ -487,7 +456,7 @@ class Strategy(BaseModel):
     id: str
     name: str
     type: StrategyType
-    owner_id: str          # hive_id or agent_id
+    owner_id: str
     owner_type: AccountType
     config: Dict[str, Any] = {}
     active: bool = True
@@ -499,7 +468,7 @@ class RiskPolicy(BaseModel):
     id: str
     owner_id: str
     owner_type: AccountType
-    max_loss_per_trade: float = 0.0       # 0 means no limit
+    max_loss_per_trade: float = 0.0
     max_daily_loss: float = 0.0
     max_position_size: float = 0.0
     kill_switch_enabled: bool = False
