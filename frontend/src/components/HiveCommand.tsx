@@ -1,7 +1,6 @@
-// frontend/src/components/HiveCommand.tsx
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Hive, Agent, HiveTask } from '../types';
+import { Hive, Agent, ExecutionLog, ExecutionLogLevel } from '../types';
 import { Icons } from '../constants';
 import { orchestratorService } from '../services/orchestratorService';
 import { LoadingSpinner } from './LoadingSpinner';
@@ -17,6 +16,7 @@ export const HiveCommand: React.FC<HiveCommandProps> = ({ hive, agents, onRunAge
   const [goalInput, setGoalInput] = useState('');
   const [executing, setExecuting] = useState(false);
   const [currentGoalId, setCurrentGoalId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'tasks' | 'logs'>('tasks');
 
   // Fetch recent goals for this hive
   const { data: goals = [], isLoading: goalsLoading } = useQuery({
@@ -31,7 +31,7 @@ export const HiveCommand: React.FC<HiveCommandProps> = ({ hive, agents, onRunAge
   }, [goals]);
 
   // If there's an active goal, set its id for task polling
-  useEffect(() => {
+  useState(() => {
     if (activeGoal) {
       setCurrentGoalId(activeGoal.id);
     } else {
@@ -54,6 +54,34 @@ export const HiveCommand: React.FC<HiveCommandProps> = ({ hive, agents, onRunAge
     enabled: !!currentGoalId,
     refetchInterval: 5000,
   });
+
+  // ==================== EXECUTION LOGS ====================
+  const { data: logs = [], isLoading: logsLoading } = useQuery({
+    queryKey: ['executionLogs', hive.id, currentGoalId],
+    queryFn: () => currentGoalId ? orchestratorService.getExecutionLogs(hive.id, currentGoalId, 200) : [],
+    enabled: !!currentGoalId,
+    refetchInterval: 2000,
+  });
+
+  const copyLogsToClipboard = () => {
+    if (logs.length === 0) {
+      toast('No logs to copy');
+      return;
+    }
+    const logText = logs.map(log => {
+      const timestamp = new Date(log.createdAt).toLocaleTimeString();
+      const level = log.level.toUpperCase();
+      const task = log.taskId ? `[task:${log.taskId}]` : '';
+      const iter = log.iteration ? `(iter ${log.iteration})` : '';
+      return `[${timestamp}] ${level} ${task} ${iter} ${log.message}`;
+    }).join('\n');
+    navigator.clipboard.writeText(logText).then(() => {
+      toast.success('Logs copied to clipboard');
+    }).catch(() => {
+      toast.error('Failed to copy logs');
+    });
+  };
+  // ========================================================
 
   const handleExecute = async () => {
     if (!goalInput.trim()) return;
@@ -78,11 +106,11 @@ export const HiveCommand: React.FC<HiveCommandProps> = ({ hive, agents, onRunAge
   const handleCancelGoal = async () => {
     if (!activeGoal) return;
     if (!confirm('Cancel current goal? This will stop all associated tasks.')) return;
-    // TODO: implement goal cancellation API
+    // TODO: implement goal cancellation
     toast('Goal cancellation not yet implemented');
   };
 
-  // Stats
+  // Stats (similar to old Dashboard)
   const stats = useMemo(() => {
     const totalTokens = agents.reduce((acc, a) => acc + a.memory.tokenCount, 0);
     const activeNodes = agents.filter(a => a.status === 'RUNNING').length;
@@ -103,6 +131,22 @@ export const HiveCommand: React.FC<HiveCommandProps> = ({ hive, agents, onRunAge
   const pendingTasks = tasks.filter(t => t.status === 'pending').length;
   const assignedTasks = tasks.filter(t => t.status === 'assigned').length;
   const completedTasks = tasks.filter(t => t.status === 'completed').length;
+
+  // Helper to get color for log level
+  const getLevelColor = (level: ExecutionLogLevel): string => {
+    switch (level) {
+      case ExecutionLogLevel.ERROR:
+        return 'text-red-400';
+      case ExecutionLogLevel.WARNING:
+        return 'text-yellow-400';
+      case ExecutionLogLevel.INFO:
+        return 'text-blue-400';
+      case ExecutionLogLevel.DEBUG:
+        return 'text-zinc-500';
+      default:
+        return 'text-zinc-400';
+    }
+  };
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-20">
@@ -192,69 +236,120 @@ export const HiveCommand: React.FC<HiveCommandProps> = ({ hive, agents, onRunAge
         <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 shadow-2xl">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-xs font-black uppercase tracking-[0.2em] text-emerald-500">Active Goal</h3>
-            <button
-              onClick={handleCancelGoal}
-              className="px-3 py-1 bg-red-600/20 text-red-400 rounded-lg text-[10px] font-black uppercase tracking-widest hover:bg-red-600/30 transition-colors"
-            >
-              Cancel
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setActiveTab(activeTab === 'tasks' ? 'logs' : 'tasks')}
+                className="px-3 py-1 bg-zinc-800 text-zinc-300 rounded-lg text-[10px] font-black uppercase tracking-widest hover:bg-zinc-700 transition-colors"
+              >
+                {activeTab === 'tasks' ? 'View Logs' : 'View Tasks'}
+              </button>
+              <button
+                onClick={handleCancelGoal}
+                className="px-3 py-1 bg-red-600/20 text-red-400 rounded-lg text-[10px] font-black uppercase tracking-widest hover:bg-red-600/30 transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
           </div>
           <p className="text-sm text-zinc-300 mb-4">{activeGoal.description}</p>
 
-          {/* Task Graph */}
-          {tasksLoading ? (
-            <div className="flex justify-center py-8">
-              <LoadingSpinner />
-            </div>
-          ) : tasks.length === 0 ? (
-            <p className="text-zinc-500 italic text-center py-4">No tasks yet. Planning in progress...</p>
-          ) : (
-            <div className="space-y-3 max-h-96 overflow-y-auto">
-              {tasks.map(task => (
-                <div key={task.id} className="flex items-center justify-between p-4 bg-zinc-950 rounded-xl border border-zinc-800">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-3">
-                      <span className={`w-2 h-2 rounded-full ${
-                        task.status === 'completed' ? 'bg-emerald-500' :
-                        task.status === 'assigned' ? 'bg-blue-500' :
-                        task.status === 'running' ? 'bg-yellow-500 animate-pulse' :
-                        'bg-zinc-600'
-                      }`} />
-                      <span className="text-sm font-bold text-zinc-300">{task.description}</span>
+          {activeTab === 'tasks' ? (
+            /* TASKS TAB */
+            <>
+              {tasksLoading ? (
+                <div className="flex justify-center py-8">
+                  <LoadingSpinner />
+                </div>
+              ) : tasks.length === 0 ? (
+                <p className="text-zinc-500 italic text-center py-4">No tasks yet. Planning in progress...</p>
+              ) : (
+                <div className="space-y-3 max-h-96 overflow-y-auto">
+                  {tasks.map(task => (
+                    <div key={task.id} className="flex items-center justify-between p-4 bg-zinc-950 rounded-xl border border-zinc-800">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-3">
+                          <span className={`w-2 h-2 rounded-full ${
+                            task.status === 'completed' ? 'bg-emerald-500' :
+                            task.status === 'assigned' ? 'bg-blue-500' :
+                            task.status === 'running' ? 'bg-yellow-500 animate-pulse' :
+                            'bg-zinc-600'
+                          }`} />
+                          <span className="text-sm font-bold text-zinc-300">{task.description}</span>
+                        </div>
+                        <div className="text-xs text-zinc-500 mt-1">
+                          ID: {task.id} | Type: {task.agent_type} | Retries: {task.retries}
+                          {task.assigned_agent_id && (
+                            <span className="ml-2 text-emerald-400">
+                              Assigned to {agents.find(a => a.id === task.assigned_agent_id)?.name || task.assigned_agent_id}
+                            </span>
+                          )}
+                        </div>
+                      </div>
                     </div>
-                    <div className="text-xs text-zinc-500 mt-1">
-                      ID: {task.id} | Type: {task.agent_type} | Retries: {task.retries}
-                      {task.assigned_agent_id && (
-                        <span className="ml-2 text-emerald-400">
-                          Assigned to {agents.find(a => a.id === task.assigned_agent_id)?.name || task.assigned_agent_id}
-                        </span>
-                      )}
-                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Recent Artifacts */}
+              {artifacts.length > 0 && (
+                <div className="mt-6 pt-4 border-t border-zinc-800">
+                  <h4 className="text-xs font-black uppercase tracking-widest text-zinc-500 mb-3">Recent Artifacts</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    {artifacts.slice(0, 4).map(art => (
+                      <a
+                        key={art.id}
+                        href={orchestratorService.getArtifactDownloadUrl(hive.id, activeGoal.id, art.id)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-2 p-2 bg-zinc-950 rounded-lg border border-zinc-800 hover:border-emerald-500/30 transition-colors"
+                      >
+                        <Icons.File className="text-emerald-500 w-4 h-4" />
+                        <span className="text-xs text-zinc-300 truncate">{art.file_path}</span>
+                        <span className="text-[9px] text-zinc-500 ml-auto">v{art.version}</span>
+                      </a>
+                    ))}
                   </div>
                 </div>
-              ))}
-            </div>
-          )}
-
-          {/* Recent Artifacts */}
-          {artifacts.length > 0 && (
-            <div className="mt-6 pt-4 border-t border-zinc-800">
-              <h4 className="text-xs font-black uppercase tracking-widest text-zinc-500 mb-3">Recent Artifacts</h4>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                {artifacts.slice(0, 4).map(art => (
-                  <a
-                    key={art.id}
-                    href={orchestratorService.getArtifactDownloadUrl(hive.id, activeGoal.id, art.id)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-2 p-2 bg-zinc-950 rounded-lg border border-zinc-800 hover:border-emerald-500/30 transition-colors"
-                  >
-                    <Icons.File className="text-emerald-500 w-4 h-4" />
-                    <span className="text-xs text-zinc-300 truncate">{art.file_path}</span>
-                    <span className="text-[9px] text-zinc-500 ml-auto">v{art.version}</span>
-                  </a>
-                ))}
+              )}
+            </>
+          ) : (
+            /* LOGS TAB */
+            <div className="space-y-4">
+              <div className="flex justify-between items-center">
+                <h4 className="text-xs font-black uppercase tracking-widest text-zinc-500">Execution Logs</h4>
+                <button
+                  onClick={copyLogsToClipboard}
+                  className="flex items-center gap-1 px-2 py-1 bg-zinc-800 text-zinc-300 rounded text-[10px] font-black uppercase tracking-widest hover:bg-zinc-700 transition-colors"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                  Copy All
+                </button>
               </div>
+              {logsLoading ? (
+                <div className="flex justify-center py-8">
+                  <LoadingSpinner />
+                </div>
+              ) : logs.length === 0 ? (
+                <p className="text-zinc-500 italic text-center py-4">No logs available.</p>
+              ) : (
+                <div className="bg-zinc-950 rounded-xl border border-zinc-800 p-4 max-h-96 overflow-y-auto font-mono text-xs">
+                  {logs.map(log => {
+                    const timestamp = new Date(log.createdAt).toLocaleTimeString();
+                    const levelClass = getLevelColor(log.level);
+                    const taskInfo = log.taskId ? `[task:${log.taskId}]` : '';
+                    const iterInfo = log.iteration ? `(iter ${log.iteration})` : '';
+                    return (
+                      <div key={log.id} className="py-1 border-b border-zinc-800/30 last:border-0">
+                        <span className="text-zinc-600">[{timestamp}]</span>{' '}
+                        <span className={levelClass}>{log.level.toUpperCase()}</span>{' '}
+                        {taskInfo && <span className="text-emerald-600">{taskInfo}</span>}{' '}
+                        {iterInfo && <span className="text-purple-400">{iterInfo}</span>}{' '}
+                        <span className="text-zinc-300">{log.message}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
         </div>

@@ -35,6 +35,15 @@ export enum SkillVisibility {
   ORGANIZATION = 'organization'
 }
 
+// ==================== EXECUTION LOG ENUM ====================
+export enum ExecutionLogLevel {
+  INFO = 'info',
+  WARNING = 'warning',
+  ERROR = 'error',
+  DEBUG = 'debug'
+}
+// ============================================================
+
 export interface ReasoningConfig {
   model: string;
   temperature: number;
@@ -171,7 +180,6 @@ export interface GlobalSettings {
   systemName: string;
   maintenanceMode: boolean;
   defaultAgentUid: string;
-  // Rate limiting – enabled by default
   rateLimitEnabled: boolean;
   rateLimitRequests: number;
   rateLimitPeriodSeconds: number;
@@ -262,3 +270,16 @@ export interface SkillVersion {
   isActive: boolean;
   changelog?: string;
 }
+
+// ==================== EXECUTION LOG TYPE ====================
+export interface ExecutionLog {
+  id: string;
+  goalId: string;
+  taskId?: string;
+  agentId?: string;
+  level: ExecutionLogLevel;
+  message: string;
+  iteration?: number;
+  createdAt: string;
+}
+// ============================================================

@@ -1,5 +1,4 @@
-// frontend/src/services/orchestratorService.ts
-import { Agent, AgentCreate, AgentUpdate, FileEntry, Hive, HiveCreate, HiveUpdate, GlobalSettings, Message, UserAccount, Skill, SkillVersion, AgentSkill } from '../types';
+import { Agent, AgentCreate, AgentUpdate, FileEntry, Hive, HiveCreate, HiveUpdate, GlobalSettings, Message, UserAccount, Skill, SkillVersion, AgentSkill, ExecutionLog } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 const API_PATH = '/api/v1';
@@ -639,6 +638,30 @@ class OrchestratorService {
 
   getArtifactDownloadUrl(hiveId: string, goalId: string, artifactId: string): string {
     return `${this.baseUrl}/hives/${hiveId}/goals/${goalId}/artifacts/${artifactId}`;
+  }
+
+  // ==================== EXECUTION LOGS ENDPOINTS ====================
+  async getExecutionLogs(hiveId: string, goalId: string, limit?: number, level?: string): Promise<ExecutionLog[]> {
+    let url = `${this.baseUrl}/hives/${hiveId}/goals/${goalId}/logs`;
+    const params = new URLSearchParams();
+    if (limit) params.append('limit', limit.toString());
+    if (level) params.append('level', level);
+    if (params.toString()) url += '?' + params.toString();
+    const res = await fetch(url, {
+      headers: this._authHeaders(),
+    });
+    if (!res.ok) throw new Error('Failed to fetch execution logs');
+    return res.json();
+  }
+
+  async getTaskExecutionLogs(hiveId: string, goalId: string, taskId: string, limit?: number): Promise<ExecutionLog[]> {
+    let url = `${this.baseUrl}/hives/${hiveId}/goals/${goalId}/logs/tasks/${taskId}`;
+    if (limit) url += `?limit=${limit}`;
+    const res = await fetch(url, {
+      headers: this._authHeaders(),
+    });
+    if (!res.ok) throw new Error('Failed to fetch task execution logs');
+    return res.json();
   }
 
   // ==================== SKILL ENDPOINTS ====================
