@@ -61,6 +61,13 @@ async def verify_internal_token(authorization: Optional[str] = Header(None)):
         raise HTTPException(status_code=403, detail="Invalid token")
     return token
 
+# Middleware to log all requests to this router
+@router.middleware("http")
+async def log_requests(request: Request, call_next):
+    logger.info(f"Incoming request: {request.method} {request.url.path}")
+    response = await call_next(request)
+    return response
+
 @router.get("/ping")
 async def ping():
     """Simple endpoint to check if the internal router is mounted."""
@@ -78,7 +85,7 @@ async def ai_generate_delta(
     request: GenerateDeltaRequest,
     token: str = Depends(verify_internal_token)
 ):
-    logger.info(f"Generate-delta called for agent {request.agent_id}")
+    logger.info(f"Entered generate-delta for agent {request.agent_id}")
 
     # Wrap everything in a try/except to catch and log any exception
     try:
