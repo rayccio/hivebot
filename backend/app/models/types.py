@@ -406,6 +406,31 @@ class HiveArtifact(BaseModel):
 
 # ==================== END NEW MODELS ====================
 
+
+# ==================== EXECUTION LOG MODEL ====================
+
+class ExecutionLogLevel(str, Enum):
+    INFO = "info"
+    WARNING = "warning"
+    ERROR = "error"
+    DEBUG = "debug"
+
+class ExecutionLog(BaseModel):
+    id: str
+    goal_id: str
+    task_id: Optional[str] = None
+    agent_id: Optional[str] = None
+    level: ExecutionLogLevel
+    message: str
+    iteration: Optional[int] = None
+    created_at: datetime
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+        use_enum_values=True
+    )
+
 # ==================== ECONOMY MODELS ====================
 
 class Currency(str, Enum):

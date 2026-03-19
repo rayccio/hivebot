@@ -1,5 +1,7 @@
 from fastapi import APIRouter
 from .endpoints import health, agents, files, global_files, providers, system, known_providers, bridges, hives, auth, users, plan, tasks, skills, agent_skills, meta, evaluation, goals, artifacts, organization, economy
+from .endpoints import logs          # new
+from .endpoints import internal_logs # internal (not exposed via v1 router, but included in main)
 
 api_router = APIRouter()
 api_router.include_router(health.router, prefix="/health", tags=["health"])
@@ -23,3 +25,4 @@ api_router.include_router(goals.router)
 api_router.include_router(artifacts.router)
 api_router.include_router(organization.router)
 api_router.include_router(economy.router)
+api_router.include_router(logs.router)  

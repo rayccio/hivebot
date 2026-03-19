@@ -387,6 +387,7 @@ done
 echo -e "${YELLOW}📦 Running database migrations...${NC}"
 docker exec hivebot_backend python /app/scripts/create_goal_tables.py || echo -e "${RED}❌ Goal migration failed, but continuing...${NC}"
 docker exec hivebot_backend python /app/scripts/create_economy_tables.py || echo -e "${RED}❌ Economy migration failed, but continuing...${NC}"
+docker exec hivebot_backend python /app/scripts/create_execution_logs_table.py || echo -e "${RED}❌ Execution logs migration failed, but continuing...${NC}"
 docker exec hivebot_backend python /app/scripts/seed_eval_tasks.py || echo -e "${RED}❌ Seeding failed, but continuing...${NC}"
 
 # --- 13. Final status ---

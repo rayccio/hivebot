@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import select, text
 import re
+from typing import Optional
 
 # Import role prompts from local constants (absolute import)
 import constants
@@ -145,6 +146,29 @@ async def read_artifact(hive_id, goal_id, task_id, file_path):
         resp.raise_for_status()
         return resp.content
 
+# ==================== EXECUTION LOGGING ====================
+
+async def log_execution(goal_id: str, level: str, message: str, task_id: Optional[str] = None, agent_id: Optional[str] = None, iteration: Optional[int] = None):
+    """Send an execution log to the orchestrator (fire-and-forget)."""
+    url = f"{ORCHESTRATOR_URL}/api/v1/internal/logs/execution"
+    headers = {
+        "Authorization": f"Bearer {INTERNAL_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "goal_id": goal_id,
+        "level": level,
+        "message": message,
+        "task_id": task_id,
+        "agent_id": agent_id,
+        "iteration": iteration
+    }
+    try:
+        async with httpx.AsyncClient() as client:
+            await client.post(url, json=payload, headers=headers, timeout=5)
+    except Exception as e:
+        logger.warning(f"Failed to send execution log: {e}")
+
 # ==================== LOOP IMPLEMENTATION ====================
 
 MAX_ITERATIONS = 5
@@ -185,6 +209,7 @@ IMPORTANT: You are NOT a generic AI assistant. You are the entity described abov
 
     current_code = None
     for iteration in range(1, MAX_ITERATIONS + 1):
+        asyncio.create_task(log_execution(goal_id, "info", f"Starting iteration {iteration}", task_id, agent_id, iteration))
         logger.info(f"Agent {agent_id} – Iteration {iteration} for task {task_id}")
 
         # Builder step: generate code
@@ -193,6 +218,7 @@ Additional input: {json.dumps(input_data, indent=2)}
 Previous code (if any): {current_code or 'None'}
 Generate the code for this task. Output only the code, no explanations."""
         code = await call_with_role(builder_prompt, builder_input)
+        asyncio.create_task(log_execution(goal_id, "debug", f"Generated code for iteration {iteration}", task_id, agent_id, iteration))
         # Save code as artifact
         file_path = f"task_{task_id}/iteration_{iteration}/code.py"
         await save_artifact(hive_id, goal_id, task_id, file_path, code.encode(), status="draft")
@@ -213,10 +239,14 @@ Write and run tests for this code. Output the test results in JSON format with k
         await save_artifact(hive_id, goal_id, task_id, f"task_{task_id}/iteration_{iteration}/test_result.json", json.dumps(test_result).encode(), status="tested")
 
         if test_result.get("passed"):
+            asyncio.create_task(log_execution(goal_id, "info", f"Task passed on iteration {iteration}", task_id, agent_id, iteration))
             logger.info(f"Task {task_id} passed on iteration {iteration}")
             # Mark final code as final
             await save_artifact(hive_id, goal_id, task_id, f"task_{task_id}/final_code.py", current_code.encode(), status="final")
+            asyncio.create_task(log_execution(goal_id, "info", f"Task {task_id} completed successfully after {iteration} iterations", task_id, agent_id, iteration))
             return True, iteration
+        else:
+            asyncio.create_task(log_execution(goal_id, "warning", f"Tests failed on iteration {iteration}: {test_result.get('errors', [])}", task_id, agent_id, iteration))
 
         # Reviewer step: get issues
         reviewer_input = f"""Task: {description}
@@ -227,6 +257,7 @@ Test errors:
 List the issues in the code that caused the test failures. Provide a list of actionable fixes."""
         issues = await call_with_role(reviewer_prompt, reviewer_input)
         await save_artifact(hive_id, goal_id, task_id, f"task_{task_id}/iteration_{iteration}/issues.txt", issues.encode(), status="reviewed")
+        asyncio.create_task(log_execution(goal_id, "info", f"Review completed, issues identified", task_id, agent_id, iteration))
 
         # Fixer step: apply fixes
         fixer_input = f"""Task: {description}
@@ -238,8 +269,10 @@ Provide the fixed code. Output only the corrected code, no explanations."""
         fixed_code = await call_with_role(fixer_prompt, fixer_input)
         current_code = fixed_code
         await save_artifact(hive_id, goal_id, task_id, f"task_{task_id}/iteration_{iteration}/fixed_code.py", fixed_code.encode(), status="fixed")
+        asyncio.create_task(log_execution(goal_id, "debug", f"Fixed code applied for iteration {iteration}", task_id, agent_id, iteration))
 
     # If loop exits without success
+    asyncio.create_task(log_execution(goal_id, "error", f"Task {task_id} failed after {MAX_ITERATIONS} iterations", task_id, agent_id))
     logger.warning(f"Task {task_id} failed after {MAX_ITERATIONS} iterations")
     return False, MAX_ITERATIONS
 
@@ -344,6 +377,8 @@ async def process_task_assign(agent_id, task_id, description, input_data, goal_i
         await update_agent_state(agent_id, agent_data)
         logger.info(f"Agent {agent_id} started task {task_id}")
 
+        asyncio.create_task(log_execution(goal_id, "info", f"Task {task_id} assigned to agent {agent_id}", task_id, agent_id))
+
         # Execute the loop
         success, iterations = await execute_task_with_loop(
             agent_id, task_id, description, input_data, goal_id, hive_id, agent_data, allowed_tools
@@ -380,6 +415,7 @@ async def process_task_assign(agent_id, task_id, description, input_data, goal_i
         logger.info(f"Agent {agent_id} completed task {task_id}")
     except Exception as e:
         logger.exception(f"Unhandled error in process_task_assign for agent {agent_id} on task {task_id}")
+        asyncio.create_task(log_execution(goal_id, "error", f"Exception in task {task_id}: {str(e)}", task_id, agent_id))
         try:
             agent_data = await get_agent_from_db(agent_id)
             if agent_data:

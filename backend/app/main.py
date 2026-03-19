@@ -5,6 +5,7 @@ from .core.config import settings
 from .api.v1.router import api_router
 from .api.v1.endpoints.ws import router as ws_router
 from .api.v1.endpoints import internal
+from .api.v1.endpoints import internal_logs 
 from .services.redis_service import redis_service
 from .services.ws_manager import manager
 from .services.agent_manager import AgentManager
@@ -111,6 +112,8 @@ def create_app() -> FastAPI:
 
     # --- Explicitly include the internal AI router under /internal ---
     app.include_router(internal.router, prefix=f"{settings.API_V1_STR}/internal")
+    # Include internal logs router
+    app.include_router(internal_logs.router, prefix=f"{settings.API_V1_STR}/internal")
     logger.info(f"Included internal router at prefix: {settings.API_V1_STR}/internal")
 
     # --- WebSocket router (no prefix) ---

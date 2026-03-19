@@ -147,3 +147,23 @@ class RiskPolicyModel(Base):
     data = Column(JSON, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+# ==================== EXECUTION LOGS TABLE ====================
+
+class ExecutionLogModel(Base):
+    __tablename__ = "execution_logs"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    goal_id = Column(String, nullable=False, index=True)
+    task_id = Column(String, nullable=True)           # optional, if log is for a specific task
+    agent_id = Column(String, nullable=True)          # optional, which agent produced the log
+    level = Column(String, nullable=False)            # INFO, WARNING, ERROR, DEBUG
+    message = Column(Text, nullable=False)
+    iteration = Column(Integer, nullable=True)        # iteration number if part of a loop
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        # Index for fast retrieval of logs for a goal
+        # Composite index on (goal_id, created_at) is automatically handled by single column index?
+        # We'll add a composite for goal+task if needed, but goal_id index is enough.
+    )
