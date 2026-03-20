@@ -390,6 +390,10 @@ docker exec hivebot_backend python /app/scripts/create_economy_tables.py || echo
 docker exec hivebot_backend python /app/scripts/create_execution_logs_table.py || echo -e "${RED}❌ Execution logs migration failed, but continuing...${NC}"
 docker exec hivebot_backend python /app/scripts/seed_eval_tasks.py || echo -e "${RED}❌ Seeding failed, but continuing...${NC}"
 
+# NEW: Migrate hives to add agentIds field
+echo -e "${YELLOW}🔄 Migrating hives to include agentIds...${NC}"
+docker exec hivebot_backend python /app/scripts/migrate_hives_add_agent_ids.py || echo -e "${RED}❌ Hive migration failed, but continuing...${NC}"
+
 # --- 13. Final status ---
 clear
 show_small_banner

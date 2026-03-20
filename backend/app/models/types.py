@@ -245,8 +245,8 @@ class Hive(BaseModel):
     description: str = ""
     # Persisted: list of agent IDs (camelCase in JSON)
     agent_ids: List[str] = Field(default_factory=list, alias="agentIds")
-    # Computed field: full agent objects (excluded from serialization)
-    agents: List[Agent] = Field(default_factory=list, exclude=True)
+    # Computed field: full agent objects (will be included in API responses)
+    agents: List[Agent] = Field(default_factory=list)
     global_user_md: str = ""
     messages: List[Message] = []
     global_files: List[FileEntry] = []
@@ -258,8 +258,8 @@ class Hive(BaseModel):
         alias_generator=to_camel,
         populate_by_name=True,
         use_enum_values=True,
-        # Exclude agents from all serialization methods
-        json_schema_extra={"exclude": {"agents"}}
+        # We do NOT exclude agents here so it's included in API responses.
+        # However, we must exclude it when storing to DB (handled in repository).
     )
 
 class HiveCreate(BaseModel):

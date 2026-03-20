@@ -63,7 +63,6 @@ async def verify_internal_token(authorization: Optional[str] = Header(None)):
 async def get_hive_for_agent(agent_id: str) -> Optional[str]:
     """Direct database query to find the hive containing this agent."""
     async with AsyncSessionLocal() as session:
-        # Use the camelCase key 'agentIds' as stored by model_dump(by_alias=True)
         result = await session.execute(
             text("SELECT data FROM hives WHERE (data->'agentIds')::jsonb @> to_jsonb(ARRAY[:agent_id])"),
             {"agent_id": agent_id}

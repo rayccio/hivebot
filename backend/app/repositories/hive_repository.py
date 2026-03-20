@@ -1,3 +1,4 @@
+# backend/app/repositories/hive_repository.py
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update, delete
 from ..models.db_models import HiveModel
@@ -10,7 +11,8 @@ class HiveRepository:
         self.db = db
 
     async def create(self, hive: Hive) -> Hive:
-        data = prepare_json_data(hive.model_dump(by_alias=True))
+        # Exclude 'agents' field from being stored
+        data = prepare_json_data(hive.model_dump(by_alias=True, exclude={'agents'}))
         db_hive = HiveModel(
             id=hive.id,
             data=data
@@ -26,6 +28,7 @@ class HiveRepository:
         )
         db_hive = result.scalar_one_or_none()
         if db_hive:
+            # We'll reconstruct the Hive object; agents will be populated later by HiveManager
             return Hive(**db_hive.data)
         return None
 
@@ -35,19 +38,20 @@ class HiveRepository:
         return [Hive(**h.data) for h in db_hives]
 
     async def update(self, hive_id: str, updates: dict) -> Hive | None:
-        hive = await self.get(hive_id)
-        if not hive:
-            return None
         # updates is a dict of fields to change (usually the whole model data)
-        # We'll replace the entire data with the new dict
+        # We'll exclude 'agents' from being stored
         data = prepare_json_data(updates)
+        # Remove 'agents' key if present (since it's not stored)
+        data.pop('agents', None)
         await self.db.execute(
             update(HiveModel)
             .where(HiveModel.id == hive_id)
             .values(data=data)
         )
         await self.db.commit()
-        return hive
+        # Return the updated hive object (without agents, but caller will re-fetch)
+        # We'll fetch fresh from DB to ensure consistency
+        return await self.get(hive_id)
 
     async def delete(self, hive_id: str) -> bool:
         result = await self.db.execute(
