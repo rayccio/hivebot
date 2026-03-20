@@ -7,12 +7,16 @@ from sqlalchemy.pool import NullPool
 from httpx import AsyncClient, ASGITransport
 from typing import AsyncGenerator, Generator
 from unittest.mock import AsyncMock, patch
+import tempfile
 
 # -------------------------------------------------------------------
 # Set environment variables BEFORE importing any app modules
 # -------------------------------------------------------------------
 os.environ['HIVEBOT_DATA'] = './test_data'
 os.environ['INTERNAL_API_KEY'] = 'test-internal-key'
+
+# Override log directory to a temporary location (prevent /app/logs creation)
+os.environ['HIVEBOT_LOG_DIR'] = tempfile.mkdtemp()
 
 # Ensure the test data directory exists
 os.makedirs('./test_data', exist_ok=True)

@@ -13,9 +13,10 @@ import re
 from typing import Optional
 from pathlib import Path
 
-# Configure logging to file
-LOG_DIR = Path("/app/logs")
+# Configure logging to file – allow override via environment variable
+LOG_DIR = Path(os.getenv('HIVEBOT_LOG_DIR', '/app/logs'))
 LOG_DIR.mkdir(exist_ok=True)
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',

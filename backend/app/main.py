@@ -2,8 +2,8 @@ import logging
 import os
 from pathlib import Path
 
-# Configure root logger to write to file
-LOG_DIR = Path("/app/logs")
+# Allow log directory to be overridden by environment variable
+LOG_DIR = Path(os.getenv('HIVEBOT_LOG_DIR', '/app/logs'))
 LOG_DIR.mkdir(exist_ok=True)
 
 logging.basicConfig(

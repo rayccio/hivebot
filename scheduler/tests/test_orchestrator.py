@@ -4,6 +4,11 @@ import asyncio
 from unittest.mock import AsyncMock, patch, MagicMock
 import json
 from datetime import datetime
+import os
+import tempfile
+
+# Set log directory to a temporary location before importing scheduler.main
+os.environ['HIVEBOT_LOG_DIR'] = tempfile.mkdtemp()
 
 # We'll test the functions from scheduler.main
 import sys

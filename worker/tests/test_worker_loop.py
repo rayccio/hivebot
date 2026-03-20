@@ -4,6 +4,12 @@ from unittest.mock import AsyncMock, patch, MagicMock
 import json
 from datetime import datetime
 import sys
+import os
+import tempfile
+
+# Set log directory to a temporary location before importing worker.main
+os.environ['HIVEBOT_LOG_DIR'] = tempfile.mkdtemp()
+
 sys.path.append('..')
 from worker.main import execute_task_with_loop, process_task_assign, parse_allowed_tools
 
