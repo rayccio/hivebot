@@ -24,7 +24,8 @@ import { BridgeProvider } from './contexts/BridgeContext';
 import { orchestratorService } from './services/orchestratorService';
 import { wsService } from './services/websocketService';
 import { toast } from 'react-hot-toast';
-import { AlertModal } from './components/Modal'; // 👈 new import
+import { AlertModal } from './components/Modal';
+import { ExecutionHistory } from './components/ExecutionHistory';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -62,7 +63,7 @@ const AppContent: React.FC = () => {
     rateLimitPeriodSeconds: 60
   });
 
-  const [view, setView] = useState<'command' | 'cluster' | 'agent' | 'context' | 'brain' | 'team' | 'global-config'>('command');
+  const [view, setView] = useState<'command' | 'cluster' | 'agent' | 'context' | 'brain' | 'team' | 'global-config' | 'history'>('command');
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
@@ -70,8 +71,6 @@ const AppContent: React.FC = () => {
   const [globalConfigSubTab, setGlobalConfigSubTab] = useState<string>('users');
 
   const { getPrimaryModel, refreshProviders } = useProviders();
-
-  // 👈 New state for no-primary modal
   const [showNoPrimaryModal, setShowNoPrimaryModal] = useState(false);
 
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -291,7 +290,6 @@ const AppContent: React.FC = () => {
     }
   };
 
-  // 👈 Modified handleCreateAgent
   const handleCreateAgent = async () => {
     if (!activeHiveId) return;
     const primaryModel = getPrimaryModel();
@@ -631,7 +629,7 @@ const AppContent: React.FC = () => {
 
         <main className="flex-1 flex flex-col overflow-hidden relative">
           {/* Header - only show when not in global-config */}
-          {view !== 'global-config' && ['command', 'cluster', 'agent', 'context', 'brain', 'team'].includes(view) && (
+          {view !== 'global-config' && ['command', 'cluster', 'agent', 'context', 'brain', 'team', 'history'].includes(view) && (
             <header className="h-16 border-b border-zinc-800 flex items-center justify-between px-4 md:px-8 bg-zinc-950/90 backdrop-blur-md sticky top-0 z-20">
               <div className="flex items-center gap-3 md:gap-4">
                 <button onClick={() => setIsSidebarOpen(true)} className="lg:hidden p-2 text-zinc-400 hover:text-white transition-colors">
@@ -648,6 +646,7 @@ const AppContent: React.FC = () => {
                   <button onClick={() => setView('brain')} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${view === 'brain' ? 'bg-zinc-800 text-emerald-400 shadow-xl' : 'text-zinc-500 hover:text-zinc-300'}`}>Brain</button>
                   <button onClick={() => setView('team')} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${view === 'team' ? 'bg-zinc-800 text-emerald-400 shadow-xl' : 'text-zinc-500 hover:text-zinc-300'}`}>Team</button>
                   <button onClick={() => setView('context')} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${view === 'context' ? 'bg-zinc-800 text-emerald-400 shadow-xl' : 'text-zinc-500 hover:text-zinc-300'}`}>Context</button>
+                  <button onClick={() => setView('history')} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${view === 'history' ? 'bg-zinc-800 text-emerald-400 shadow-xl' : 'text-zinc-500 hover:text-zinc-300'}`}>History</button>
                 </div>
                 
                 <div className="w-px h-6 bg-zinc-800 hidden lg:block"></div>
@@ -753,6 +752,10 @@ const AppContent: React.FC = () => {
               />
             )}
 
+            {view === 'history' && activeHive && (
+              <ExecutionHistory hive={activeHive} />
+            )}
+
             {view === 'agent' && (
               selectedAgentId === creatingBotId ? (
                 <div className="flex items-center justify-center min-h-[400px]">
@@ -803,7 +806,6 @@ const AppContent: React.FC = () => {
         />
       )}
 
-      {/* 👈 New modal for missing primary AI */}
       <AlertModal
         isOpen={showNoPrimaryModal}
         onClose={() => setShowNoPrimaryModal(false)}

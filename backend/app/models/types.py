@@ -228,7 +228,6 @@ class ConversationMessage(BaseModel):
     content: str
     timestamp: datetime
 
-# ==================== HIVE MODEL (UPDATED) ====================
 class HiveMindConfig(BaseModel):
     access_level: HiveMindAccessLevel = HiveMindAccessLevel.ISOLATED
     shared_hive_ids: List[str] = []
@@ -243,9 +242,7 @@ class Hive(BaseModel):
     id: str
     name: str
     description: str = ""
-    # Persisted: list of agent IDs (camelCase in JSON)
     agent_ids: List[str] = Field(default_factory=list, alias="agentIds")
-    # Computed field: full agent objects (will be included in API responses)
     agents: List[Agent] = Field(default_factory=list)
     global_user_md: str = ""
     messages: List[Message] = []
@@ -258,8 +255,6 @@ class Hive(BaseModel):
         alias_generator=to_camel,
         populate_by_name=True,
         use_enum_values=True,
-        # We do NOT exclude agents here so it's included in API responses.
-        # However, we must exclude it when storing to DB (handled in repository).
     )
 
 class HiveCreate(BaseModel):
@@ -340,6 +335,7 @@ class HiveTaskStatus(str, Enum):
     COMPLETED = "completed"
     FAILED = "failed"
     BLOCKED = "blocked"
+    CANCELLED = "cancelled"
 
 class HiveTask(BaseModel):
     id: str

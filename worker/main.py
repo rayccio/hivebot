@@ -12,7 +12,6 @@ from sqlalchemy import select, text
 import re
 from typing import Optional
 
-# Import role prompts from local constants (absolute import)
 import constants
 
 logging.basicConfig(level=logging.INFO)
@@ -32,7 +31,6 @@ DATABASE_URL = f"postgresql+asyncpg://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTG
 engine = create_async_engine(DATABASE_URL, echo=False)
 AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
-# Import tool executor
 try:
     from tool_executor import ToolExecutor
     tool_executor = ToolExecutor(simulator_url=SIMULATOR_URL)
@@ -124,9 +122,6 @@ def parse_tool_calls(ai_response: str) -> list:
     return tool_calls
 
 def parse_allowed_tools(tools_md: str) -> list:
-    """Parse tools.md to extract list of allowed tool names.
-    Looks for the '## Permitted Tools' section and collects lines starting with '- ' until the next heading.
-    """
     allowed = []
     in_permitted_section = False
     for line in tools_md.splitlines():
@@ -134,7 +129,7 @@ def parse_allowed_tools(tools_md: str) -> list:
         if line.startswith('## Permitted Tools'):
             in_permitted_section = True
             continue
-        elif line.startswith('## '):  # any other heading ends the section
+        elif line.startswith('## '):
             in_permitted_section = False
             continue
         if in_permitted_section and line.startswith('- '):
@@ -145,7 +140,6 @@ def parse_allowed_tools(tools_md: str) -> list:
     return allowed
 
 async def save_artifact(hive_id, goal_id, task_id, file_path, content, status="draft"):
-    """Upload an artifact to the orchestrator."""
     url = f"{ORCHESTRATOR_URL}/api/v1/hives/{hive_id}/goals/{goal_id}/artifacts"
     async with httpx.AsyncClient() as client:
         files = {'file': (file_path, content)}
@@ -155,7 +149,6 @@ async def save_artifact(hive_id, goal_id, task_id, file_path, content, status="d
         return resp.json()
 
 async def read_artifact(hive_id, goal_id, task_id, file_path):
-    """Read the latest version of an artifact."""
     url = f"{ORCHESTRATOR_URL}/api/v1/hives/{hive_id}/goals/{goal_id}/artifacts/latest?task_id={task_id}&file_path={file_path}"
     async with httpx.AsyncClient() as client:
         resp = await client.get(url, headers={"Authorization": f"Bearer {INTERNAL_API_KEY}"})
@@ -167,7 +160,6 @@ async def read_artifact(hive_id, goal_id, task_id, file_path):
 # ==================== EXECUTION LOGGING ====================
 
 async def log_execution(goal_id: str, level: str, message: str, task_id: Optional[str] = None, agent_id: Optional[str] = None, iteration: Optional[int] = None):
-    """Send an execution log to the orchestrator (fire-and-forget)."""
     url = f"{ORCHESTRATOR_URL}/api/v1/internal/logs/execution"
     headers = {
         "Authorization": f"Bearer {INTERNAL_API_KEY}",
@@ -192,20 +184,17 @@ async def log_execution(goal_id: str, level: str, message: str, task_id: Optiona
 MAX_ITERATIONS = 5
 
 async def execute_task_with_loop(agent_id, task_id, description, input_data, goal_id, hive_id, agent_data, allowed_tools):
-    """Run the builder → tester → reviewer → fixer loop for a task."""
     reasoning_config = agent_data.get("reasoning", {})
 
-    # Helper to call AI with a role override
     async def call_with_role(role_prompt, user_prompt):
         return await call_ai_delta(
             agent_id,
             user_prompt,
             reasoning_config,
             system_prompt_override=role_prompt,
-            retries=1  # one retry on 404
+            retries=1
         )
 
-    # Combine soul, identity, tools into a single system prompt
     def make_system_prompt(soul, identity, tools):
         return f"""You are an AI agent with the following STRICT IDENTITY. You must follow this identity exactly.
 
@@ -231,43 +220,36 @@ IMPORTANT: You are NOT a generic AI assistant. You are the entity described abov
         asyncio.create_task(log_execution(goal_id, "info", f"Starting iteration {iteration}", task_id, agent_id, iteration))
         logger.info(f"Agent {agent_id} – Iteration {iteration} for task {task_id}")
 
-        # Builder step: generate code
         builder_input = f"""Task: {description}
 Additional input: {json.dumps(input_data, indent=2)}
 Previous code (if any): {current_code or 'None'}
 Generate the code for this task. Output only the code, no explanations."""
         code = await call_with_role(builder_prompt, builder_input)
         asyncio.create_task(log_execution(goal_id, "debug", f"Generated code for iteration {iteration}", task_id, agent_id, iteration))
-        # Save code as artifact
         file_path = f"task_{task_id}/iteration_{iteration}/code.py"
         await save_artifact(hive_id, goal_id, task_id, file_path, code.encode(), status="draft")
         current_code = code
 
-        # Tester step: test the code
         tester_input = f"""Task: {description}
 Code to test:
 {code}
 Write and run tests for this code. Output the test results in JSON format with keys "passed" (bool) and "errors" (list of strings)."""
         test_result_text = await call_with_role(tester_prompt, tester_input)
-        # Parse test result (expecting JSON)
         try:
             test_result = json.loads(test_result_text)
         except:
             test_result = {"passed": False, "errors": ["Failed to parse test output"]}
-        # Save test result artifact
         await save_artifact(hive_id, goal_id, task_id, f"task_{task_id}/iteration_{iteration}/test_result.json", json.dumps(test_result).encode(), status="tested")
 
         if test_result.get("passed"):
             asyncio.create_task(log_execution(goal_id, "info", f"Task passed on iteration {iteration}", task_id, agent_id, iteration))
             logger.info(f"Task {task_id} passed on iteration {iteration}")
-            # Mark final code as final
             await save_artifact(hive_id, goal_id, task_id, f"task_{task_id}/final_code.py", current_code.encode(), status="final")
             asyncio.create_task(log_execution(goal_id, "info", f"Task {task_id} completed successfully after {iteration} iterations", task_id, agent_id, iteration))
             return True, iteration
         else:
             asyncio.create_task(log_execution(goal_id, "warning", f"Tests failed on iteration {iteration}: {test_result.get('errors', [])}", task_id, agent_id, iteration))
 
-        # Reviewer step: get issues
         reviewer_input = f"""Task: {description}
 Code:
 {code}
@@ -278,7 +260,6 @@ List the issues in the code that caused the test failures. Provide a list of act
         await save_artifact(hive_id, goal_id, task_id, f"task_{task_id}/iteration_{iteration}/issues.txt", issues.encode(), status="reviewed")
         asyncio.create_task(log_execution(goal_id, "info", f"Review completed, issues identified", task_id, agent_id, iteration))
 
-        # Fixer step: apply fixes
         fixer_input = f"""Task: {description}
 Code:
 {code}
@@ -290,7 +271,6 @@ Provide the fixed code. Output only the corrected code, no explanations."""
         await save_artifact(hive_id, goal_id, task_id, f"task_{task_id}/iteration_{iteration}/fixed_code.py", fixed_code.encode(), status="fixed")
         asyncio.create_task(log_execution(goal_id, "debug", f"Fixed code applied for iteration {iteration}", task_id, agent_id, iteration))
 
-    # If loop exits without success
     asyncio.create_task(log_execution(goal_id, "error", f"Task {task_id} failed after {MAX_ITERATIONS} iterations", task_id, agent_id))
     logger.warning(f"Task {task_id} failed after {MAX_ITERATIONS} iterations")
     return False, MAX_ITERATIONS
@@ -308,14 +288,12 @@ async def process_think_command(agent_id, user_input, model_config, simulation=F
         await update_agent_state(agent_id, agent_data)
         logger.info(f"Agent {agent_id} started think command")
 
-        # Parse allowed tools
         tools_md = agent_data.get("tools_md", "")
         allowed_tools = parse_allowed_tools(tools_md)
 
         response = await call_ai_delta(agent_id, user_input, model_config, retries=1)
         logger.debug(f"Agent {agent_id} AI response: {response[:100]}...")
 
-        # Parse and execute tool calls
         tool_calls = parse_tool_calls(response)
         observations = []
         for tc in tool_calls:
@@ -331,9 +309,15 @@ async def process_think_command(agent_id, user_input, model_config, simulation=F
         if observations:
             response += "\n" + "\n".join(observations)
 
-        # Update memory
         if "memory" not in agent_data:
             agent_data["memory"] = {"shortTerm": [], "summary": "", "tokenCount": 0}
+        else:
+            if "shortTerm" not in agent_data["memory"]:
+                agent_data["memory"]["shortTerm"] = []
+            if "summary" not in agent_data["memory"]:
+                agent_data["memory"]["summary"] = ""
+            if "tokenCount" not in agent_data["memory"]:
+                agent_data["memory"]["tokenCount"] = 0
         agent_data["memory"]["shortTerm"].append(response)
         if len(agent_data["memory"]["shortTerm"]) > 10:
             agent_data["memory"]["shortTerm"] = agent_data["memory"]["shortTerm"][-10:]
@@ -344,7 +328,6 @@ async def process_think_command(agent_id, user_input, model_config, simulation=F
 
         await register_agent_idle(agent_id)
 
-        # Determine reporting target
         reporting_target = agent_data.get("reportingTarget", "PARENT_AGENT")
         parent_id = agent_data.get("parentId")
 
@@ -377,13 +360,13 @@ async def process_think_command(agent_id, user_input, model_config, simulation=F
             agent_data = await get_agent_from_db(agent_id)
             if agent_data:
                 agent_data["status"] = "ERROR"
+                agent_data["last_active"] = datetime.utcnow().isoformat()
                 await update_agent_state(agent_id, agent_data)
         except:
             pass
 
 async def process_task_assign(agent_id, task_id, description, input_data, goal_id, hive_id, simulation=False):
     try:
-        # Small delay to ensure agent is fully committed
         await asyncio.sleep(0.5)
 
         agent_data = await get_agent_from_db(agent_id)
@@ -391,7 +374,16 @@ async def process_task_assign(agent_id, task_id, description, input_data, goal_i
             logger.error(f"Agent {agent_id} not found in DB")
             return
 
-        # Parse allowed tools
+        if "memory" not in agent_data:
+            agent_data["memory"] = {"shortTerm": [], "summary": "", "tokenCount": 0}
+        else:
+            if "shortTerm" not in agent_data["memory"]:
+                agent_data["memory"]["shortTerm"] = []
+            if "summary" not in agent_data["memory"]:
+                agent_data["memory"]["summary"] = ""
+            if "tokenCount" not in agent_data["memory"]:
+                agent_data["memory"]["tokenCount"] = 0
+
         tools_md = agent_data.get("tools_md", "")
         allowed_tools = parse_allowed_tools(tools_md)
 
@@ -401,26 +393,20 @@ async def process_task_assign(agent_id, task_id, description, input_data, goal_i
 
         asyncio.create_task(log_execution(goal_id, "info", f"Task {task_id} assigned to agent {agent_id}", task_id, agent_id))
 
-        # Execute the loop
         success, iterations = await execute_task_with_loop(
             agent_id, task_id, description, input_data, goal_id, hive_id, agent_data, allowed_tools
         )
 
-        # Update agent status and memory
-        if "memory" not in agent_data:
-            agent_data["memory"] = {"shortTerm": [], "summary": "", "tokenCount": 0}
-        summary = f"Task {task_id} {'succeeded' if success else 'failed'} after {iterations} iterations."
-        agent_data["memory"]["shortTerm"].append(summary)
+        agent_data["memory"]["shortTerm"].append(f"Task {task_id} {'succeeded' if success else 'failed'} after {iterations} iterations.")
         if len(agent_data["memory"]["shortTerm"]) > 10:
             agent_data["memory"]["shortTerm"] = agent_data["memory"]["shortTerm"][-10:]
-        agent_data["memory"]["tokenCount"] += len(summary.split()) * 1.3
+        agent_data["memory"]["tokenCount"] += len(f"Task {task_id} {'succeeded' if success else 'failed'} after {iterations} iterations.".split()) * 1.3
 
         agent_data["status"] = "IDLE"
         await update_agent_state(agent_id, agent_data)
 
         await register_agent_idle(agent_id)
 
-        # Report completion
         result = {
             "agent_id": agent_id,
             "task_id": task_id,
@@ -442,6 +428,7 @@ async def process_task_assign(agent_id, task_id, description, input_data, goal_i
             agent_data = await get_agent_from_db(agent_id)
             if agent_data:
                 agent_data["status"] = "ERROR"
+                agent_data["last_active"] = datetime.utcnow().isoformat()
                 await update_agent_state(agent_id, agent_data)
         except:
             pass

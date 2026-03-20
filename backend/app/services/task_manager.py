@@ -24,7 +24,6 @@ class TaskManager:
         for task in tasks:
             task.goal_id = goal_id
             task.hive_id = hive_id
-        # graph object no longer needed; we'll store tasks individually
         repo, session = await self._get_repo()
         try:
             for task in tasks:
@@ -76,7 +75,6 @@ class TaskManager:
         repo, session = await self._get_repo()
         try:
             tasks = await repo.get_by_hive_id(hive_id)
-            # Group by goal_id
             graphs = {}
             for t in tasks:
                 if t.goal_id not in graphs:
@@ -85,14 +83,20 @@ class TaskManager:
             result = []
             for goal_id, task_list in graphs.items():
                 if task_list:
-                    # For simplicity, return only goal_id and tasks
                     result.append({
                         "goal_id": goal_id,
-                        "goal_description": task_list[0].description,  # placeholder
+                        "goal_description": task_list[0].description,
                         "hive_id": hive_id,
                         "tasks": task_list,
                         "created_at": task_list[0].created_at
                     })
             return result
+        finally:
+            await session.close()
+
+    async def list_tasks_for_agent(self, agent_id: str) -> List[HiveTask]:
+        repo, session = await self._get_repo()
+        try:
+            return await repo.get_by_agent_id(agent_id)
         finally:
             await session.close()

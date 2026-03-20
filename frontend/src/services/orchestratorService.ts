@@ -620,6 +620,15 @@ class OrchestratorService {
     return res.json();
   }
 
+  async cancelGoal(hiveId: string, goalId: string): Promise<any> {
+    const res = await fetch(`${this.baseUrl}/hives/${hiveId}/goals/${goalId}/cancel`, {
+      method: 'POST',
+      headers: this._authHeaders(),
+    });
+    if (!res.ok) throw new Error('Failed to cancel goal');
+    return res.json();
+  }
+
   async listTasksForGoal(hiveId: string, goalId: string): Promise<any[]> {
     const res = await fetch(`${this.baseUrl}/hives/${hiveId}/goals/${goalId}/tasks`, {
       headers: this._authHeaders(),

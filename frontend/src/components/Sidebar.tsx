@@ -18,7 +18,6 @@ interface SidebarProps {
   onViewChange: (view: string) => void;
   onClose: () => void;
   currentUser?: UserAccount;
-  // Global Config navigation props
   globalConfigCategory: 'system' | 'knowledge' | 'integrations';
   globalConfigSubTab: string;
   onGlobalConfigCategoryChange: (category: 'system' | 'knowledge' | 'integrations') => void;
@@ -49,14 +48,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const [showHiveList, setShowHiveList] = useState(false);
   const activeHive = hives.find(h => h.id === activeHiveId);
 
-  // Helper to handle back from global config
   const handleBackToHive = () => {
     onViewChange('command');
   };
 
   return (
     <aside className="w-72 h-full border-r border-zinc-800 flex flex-col bg-zinc-900/95 lg:bg-zinc-900/30 backdrop-blur-md">
-      {/* Hive Switcher Section – always present */}
+      {/* Hive Switcher Section */}
       <div className="p-4 border-b border-zinc-800 bg-zinc-950/30">
         <div className="relative">
           <button 
@@ -118,12 +116,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
       </div>
 
-      {/* Main navigation area – conditional based on currentView */}
+      {/* Main navigation area */}
       <div className="flex-1 overflow-y-auto p-4">
         {currentView === 'global-config' ? (
           /* Global Config Navigation */
           <div className="space-y-6">
-            {/* Back button */}
             <button
               onClick={handleBackToHive}
               className="w-full flex items-center gap-3 px-4 py-3 text-zinc-400 hover:text-emerald-400 hover:bg-zinc-900 rounded-xl transition-all"
@@ -234,7 +231,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
           </div>
         ) : (
-          /* Hive Navigation (unchanged) */
+          /* Hive Navigation */
           <>
             <button 
               onClick={() => onSelect(null)}
@@ -291,7 +288,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {currentUser?.role === 'GLOBAL_ADMIN' && (
         <div className="p-4 border-t border-zinc-800 bg-zinc-950/50">
           {currentView === 'global-config' ? (
-            /* Already in global config – no extra button */
             null
           ) : (
             <button 

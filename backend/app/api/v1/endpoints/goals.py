@@ -44,12 +44,10 @@ async def create_goal(
     planner: Planner = Depends(get_planner),
     hive_manager: HiveManager = Depends(get_hive_manager)
 ):
-    # Verify hive exists
     hive = await hive_manager.get_hive(hive_id)
     if not hive:
         raise HTTPException(status_code=404, detail="Hive not found")
 
-    # Create goal
     goal = await goal_engine.create_goal(
         hive_id=hive_id,
         description=request.description,
@@ -57,13 +55,11 @@ async def create_goal(
         success_criteria=request.success_criteria
     )
 
-    # Fetch skills for planner (optional)
     from ....services.skill_manager import SkillManager
     skill_manager = SkillManager()
     all_skills = await skill_manager.list_skills()
     skills_list = [{"id": s.id, "name": s.name, "description": s.description} for s in all_skills]
 
-    # Plan tasks
     try:
         tasks = await planner.plan(
             goal_id=goal.id,
@@ -76,7 +72,6 @@ async def create_goal(
         logger.error(f"Planning failed for goal {goal.id}: {e}")
         raise HTTPException(status_code=500, detail=f"Planning failed: {str(e)}")
 
-    # Update goal status to PLANNING
     await goal_engine.update_goal_status(goal.id, HiveGoalStatus.PLANNING)
 
     return GoalResponse(goal=goal, tasks=tasks)
@@ -105,7 +100,6 @@ async def get_goal_tasks(
     goal_id: str,
     db: AsyncSession = Depends(get_db)
 ):
-    # Verify goal belongs to hive
     goal_engine = GoalEngine()
     goal = await goal_engine.get_goal(goal_id)
     if not goal or goal.hive_id != hive_id:
@@ -116,5 +110,20 @@ async def get_goal_tasks(
         {"goal_id": goal_id}
     )
     rows = result.fetchall()
-    # rows[0] is already a dict (JSONB deserialized by asyncpg)
     return [HiveTask.model_validate(r[0]) for r in rows]
+
+@router.post("/{goal_id}/cancel", response_model=HiveGoal)
+async def cancel_goal(
+    hive_id: str,
+    goal_id: str,
+    goal_engine: GoalEngine = Depends(get_goal_engine),
+    hive_manager: HiveManager = Depends(get_hive_manager)
+):
+    hive = await hive_manager.get_hive(hive_id)
+    if not hive:
+        raise HTTPException(status_code=404, detail="Hive not found")
+    goal = await goal_engine.get_goal(goal_id)
+    if not goal or goal.hive_id != hive_id:
+        raise HTTPException(status_code=404, detail="Goal not found")
+    cancelled = await goal_engine.cancel_goal(goal_id)
+    return cancelled

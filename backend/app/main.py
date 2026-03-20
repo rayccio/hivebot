@@ -1,3 +1,4 @@
+# backend/app/main.py
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -5,7 +6,7 @@ from .core.config import settings
 from .api.v1.router import api_router
 from .api.v1.endpoints.ws import router as ws_router
 from .api.v1.endpoints import internal
-from .api.v1.endpoints import internal_logs 
+from .api.v1.endpoints import internal_logs
 from .services.redis_service import redis_service
 from .services.ws_manager import manager
 from .services.agent_manager import AgentManager
@@ -17,7 +18,7 @@ from .services.vector_service import vector_service
 from .models.types import UserCreate, UserRole, GlobalSettings, AgentUpdate
 from .api.v1.endpoints.bridges import BRIDGE_CONTAINERS
 from .core.database import engine, Base
-from .models import db_models  # noqa
+from .models import db_models
 from sentence_transformers import SentenceTransformer
 import logging
 import asyncio
@@ -30,13 +31,11 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 async def init_db():
-    """Create database tables if they don't exist."""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     logger.info("Database tables initialized")
 
 async def sync_bridge_containers():
-    """Ensure that only bridges marked as enabled are running."""
     docker = DockerService()
     enabled_bridges = settings.secrets.get("ENABLED_BRIDGES") or []
     for bridge_type, container_name in BRIDGE_CONTAINERS.items():
@@ -70,9 +69,7 @@ async def listen_for_task_completions():
             output = data.get("output")
             if not goal_id or not task_id:
                 continue
-            # Update task
             await task_manager.update_task(task_id, status="completed", output_data=output)
-            # Check if all tasks in graph are completed
             graph = await task_manager.get_task_graph(goal_id)
             if graph:
                 all_done = all(t.status == "completed" for t in graph.tasks)
@@ -88,7 +85,6 @@ def create_app() -> FastAPI:
         openapi_url=f"{settings.API_V1_STR}/openapi.json" if settings.ENVIRONMENT != "production" else None,
     )
 
-    # --- Custom exception handler for consistent error responses ---
     @app.exception_handler(Exception)
     async def generic_exception_handler(request: Request, exc: Exception):
         logger.error(f"Unhandled exception: {exc}", exc_info=True)
@@ -97,7 +93,6 @@ def create_app() -> FastAPI:
             content={"detail": "Internal server error", "code": "INTERNAL_ERROR"}
         )
 
-    # --- CORS middleware ---
     if settings.cors_origins:
         app.add_middleware(
             CORSMiddleware,
@@ -107,16 +102,11 @@ def create_app() -> FastAPI:
             allow_headers=["*"],
         )
 
-    # --- Include the main API router (does NOT include internal) ---
     app.include_router(api_router, prefix=settings.API_V1_STR)
-
-    # --- Explicitly include the internal AI router under /internal ---
     app.include_router(internal.router, prefix=f"{settings.API_V1_STR}/internal")
-    # Include internal logs router
     app.include_router(internal_logs.router, prefix=f"{settings.API_V1_STR}/internal")
     logger.info(f"Included internal router at prefix: {settings.API_V1_STR}/internal")
 
-    # --- WebSocket router (no prefix) ---
     app.include_router(ws_router)
 
     @app.get("/health")
@@ -136,12 +126,10 @@ def create_app() -> FastAPI:
         await redis_service.wait_ready()
         logger.info("Redis connected")
 
-        # Connect to Qdrant with retries
         await vector_service.connect()
         await vector_service.ensure_collection(dim=384)
         logger.info("Qdrant ready")
 
-        # Initialize global settings if not present
         if not settings.secrets.get("GLOBAL_SETTINGS"):
             default_settings = GlobalSettings(
                 login_enabled=False,
@@ -156,7 +144,6 @@ def create_app() -> FastAPI:
             settings.secrets.set("GLOBAL_SETTINGS", default_settings.dict())
             logger.info("Initialized global settings with gateway disabled and rate limiting enabled")
 
-        # Create default admin if no users exist
         try:
             user_manager = UserManager()
             users = await user_manager.list_users()
@@ -181,6 +168,7 @@ def create_app() -> FastAPI:
         asyncio.create_task(summarize_agent_memories())
         asyncio.create_task(sync_bridge_containers())
         asyncio.create_task(listen_for_task_completions())
+        asyncio.create_task(reset_stale_error_agents())
 
     @app.on_event("shutdown")
     async def shutdown_event():
@@ -267,7 +255,6 @@ def create_app() -> FastAPI:
                 logger.error(f"Failed to update agent memory: {e}")
 
     async def summarize_agent_memories():
-        """Periodically summarize long conversations and store in long‑term memory."""
         while True:
             await asyncio.sleep(300)
             try:
@@ -319,7 +306,6 @@ Provide a concise summary (max 100 words) that captures the key points and conte
                         await agent_manager.update_agent(agent.id, AgentUpdate(memory=agent.memory))
                         logger.info(f"Summarized memory for agent {agent.id}")
 
-                        # --- Store summary in long‑term memory ---
                         try:
                             await agent_manager.store_long_term_memory(
                                 agent_id=agent.id,
@@ -334,7 +320,16 @@ Provide a concise summary (max 100 words) that captures the key points and conte
             except Exception as e:
                 logger.exception("Error in memory summarization task")
 
-    # --- Log all registered routes after app creation ---
+    async def reset_stale_error_agents():
+        while True:
+            await asyncio.sleep(3600)
+            try:
+                docker = DockerService()
+                agent_manager = AgentManager(docker)
+                await agent_manager.reset_stale_error_agents()
+            except Exception as e:
+                logger.exception(f"Error agent reset failed: {e}")
+
     logger.info("=== Registered Routes ===")
     for route in app.routes:
         if hasattr(route, "path"):

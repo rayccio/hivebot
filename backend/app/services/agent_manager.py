@@ -1,3 +1,4 @@
+# backend/app/services/agent_manager.py
 import json
 import os
 from typing import Dict, Optional, List, Set
@@ -20,6 +21,7 @@ from ..constants import (
 from .hive_manager import HiveManager
 from .skill_manager import SkillManager
 from .vector_service import vector_service
+from .task_manager import TaskManager
 import uuid
 import shutil
 import logging
@@ -32,7 +34,6 @@ class AgentManager:
         self.cache: Dict[str, Agent] = {}
 
     def _get_prompts_for_role(self, role: AgentRole) -> tuple[str, str, str]:
-        """Return (soul_md, identity_md, tools_md) for the given role."""
         if role == AgentRole.BUILDER:
             return BUILDER_SOUL, BUILDER_IDENTITY, BUILDER_TOOLS
         elif role == AgentRole.TESTER:
@@ -45,7 +46,7 @@ class AgentManager:
             return ARCHITECT_SOUL, ARCHITECT_IDENTITY, ARCHITECT_TOOLS
         elif role == AgentRole.RESEARCHER:
             return RESEARCHER_SOUL, RESEARCHER_IDENTITY, RESEARCHER_TOOLS
-        else:  # GENERIC or unknown
+        else:
             return INITIAL_SOUL, INITIAL_IDENTITY, INITIAL_TOOLS
 
     async def _get_repo(self):
@@ -64,7 +65,6 @@ class AgentManager:
         org_role: OrgRole = OrgRole.MEMBER,
         department: Optional[str] = None
     ) -> Agent:
-        """Create a new agent with the given role, using role‑specific prompts."""
         soul, identity, tools = self._get_prompts_for_role(role)
         agent_in = AgentCreate(
             name=name,
@@ -89,7 +89,7 @@ class AgentManager:
         if not internal_api_key:
             raise RuntimeError("Internal API key not configured")
 
-        container_id = ""  # empty means no container by default
+        container_id = ""
 
         agent_dir = settings.AGENTS_DIR / agent_id
         agent_dir.mkdir(parents=True, exist_ok=True)
@@ -135,7 +135,6 @@ class AgentManager:
 
         self.cache[agent_id] = agent
 
-        # Add to Redis idle set
         await redis_service.sadd("agents:idle", agent_id)
         logger.info(f"Agent {agent_id} added to Redis idle set")
 
@@ -215,7 +214,6 @@ class AgentManager:
                 else:
                     agent.status = AgentStatus.OFFLINE
             else:
-                # worker-based agent: status is stored in DB (updated by worker)
                 pass
             self.cache[agent.id] = agent
 
@@ -328,10 +326,8 @@ class AgentManager:
             for ch_type in channel_types:
                 await redis_service.publish(f"config:bridge:{ch_type}", json.dumps({"agent_id": agent_id}))
 
-        # Remove from idle set if present
         await redis_service.srem("agents:idle", agent_id)
 
-        # Delete all vectors (including memories) for this agent
         await vector_service.delete_by_agent(agent_id)
 
         return True
@@ -374,7 +370,6 @@ class AgentManager:
         agent = await self.get_agent(agent_id)
         if not agent:
             return None
-        # Implementation would go here – currently placeholder
         return agent
 
     async def uninstall_skill(self, agent_id: str, skill_id: str) -> bool:
@@ -383,27 +378,22 @@ class AgentManager:
     async def update_agent_skill_config(self, agent_id: str, skill_id: str, config: dict) -> Optional[Agent]:
         return None
 
-    # --- Spawn agent for a task with role ---
     async def spawn_agent_for_task(self, hive_id: str, required_skill_ids: List[str], agent_type: str) -> Optional[Agent]:
-        """Create a new agent with the required role and skills, and add it to the hive."""
         skill_manager = SkillManager()
 
-        # Convert agent_type string to AgentRole enum (default to GENERIC)
         try:
             role = AgentRole(agent_type)
         except ValueError:
             role = AgentRole.GENERIC
 
-        # Get a reasonable reasoning config (could be improved)
         reasoning = ReasoningConfig(
-            model="openai/gpt-4o",  # or use global default
+            model="openai/gpt-4o",
             temperature=0.7,
             topP=1.0,
             maxTokens=150,
             use_global_default=True
         )
 
-        # Create agent with role-specific prompts, default org_role = MEMBER
         agent = await self.create_role_agent(
             name=f"{role.value.capitalize()} Bee",
             role=role,
@@ -416,32 +406,23 @@ class AgentManager:
             department=None
         )
 
-        # Install the required skills
         for skill_id in required_skill_ids:
             skill = await skill_manager.get_skill(skill_id)
             if not skill:
                 continue
-            # Get the latest active version
             versions = await skill_manager.list_versions(skill.id)
             active_versions = [v for v in versions if v.is_active]
             if active_versions:
                 latest = max(active_versions, key=lambda v: v.created_at)
                 await skill_manager.install_skill(agent.id, skill.id, latest.id, {})
 
-        # Add agent to the hive
         hive_manager = HiveManager(self)
         await hive_manager.add_agent(hive_id, agent)
 
         logger.info(f"Spawned agent {agent.id} (role {role.value}) for hive {hive_id} with skills {required_skill_ids}")
         return agent
 
-    # ==================== LONG‑TERM MEMORY METHODS ====================
-
     async def store_long_term_memory(self, agent_id: str, text: str, timestamp: Optional[datetime] = None) -> bool:
-        """
-        Store a piece of long‑term memory (e.g., a summary) for an agent.
-        Returns True on success, False on failure.
-        """
         try:
             from sentence_transformers import SentenceTransformer
             model = SentenceTransformer("all-MiniLM-L6-v2")
@@ -460,7 +441,6 @@ class AgentManager:
             return False
 
     async def get_long_term_memory(self, agent_id: str, query: str, limit: int = 5) -> List[str]:
-        """Retrieve relevant long‑term memories for an agent based on a query."""
         from sentence_transformers import SentenceTransformer
         try:
             model = SentenceTransformer("all-MiniLM-L6-v2")
@@ -475,3 +455,19 @@ class AgentManager:
         except Exception as e:
             logger.error(f"Failed to search memory for agent {agent_id}: {e}")
             return []
+
+    async def reset_stale_error_agents(self, max_age_seconds: int = 3600):
+        from datetime import timedelta
+        cutoff = datetime.utcnow() - timedelta(seconds=max_age_seconds)
+        agents = await self.list_agents()
+        task_manager = TaskManager()
+        reset_count = 0
+        for agent in agents:
+            if agent.status == AgentStatus.ERROR and agent.last_active < cutoff:
+                tasks = await task_manager.list_tasks_for_agent(agent.id)
+                if not tasks:
+                    logger.info(f"Resetting stale error agent {agent.id} ({agent.name}) to IDLE")
+                    await self.update_agent(agent.id, AgentUpdate(status=AgentStatus.IDLE, last_active=datetime.utcnow()))
+                    reset_count += 1
+        logger.info(f"Reset {reset_count} stale error agents to IDLE")
+        return reset_count

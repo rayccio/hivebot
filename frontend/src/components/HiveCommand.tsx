@@ -5,6 +5,8 @@ import { Icons } from '../constants';
 import { orchestratorService } from '../services/orchestratorService';
 import { LoadingSpinner } from './LoadingSpinner';
 import { toast } from 'react-hot-toast';
+import { AlertModal, ConfirmationModal } from './Modal';
+import { useProviders } from '../contexts/ProviderContext';
 
 interface HiveCommandProps {
   hive: Hive;
@@ -17,6 +19,10 @@ export const HiveCommand: React.FC<HiveCommandProps> = ({ hive, agents, onRunAge
   const [executing, setExecuting] = useState(false);
   const [currentGoalId, setCurrentGoalId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'tasks' | 'logs'>('tasks');
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+  const [showNoPrimaryModal, setShowNoPrimaryModal] = useState(false);
+
+  const { getPrimaryModel } = useProviders();
 
   // Fetch recent goals for this hive
   const { data: goals = [], isLoading: goalsLoading } = useQuery({
@@ -25,7 +31,6 @@ export const HiveCommand: React.FC<HiveCommandProps> = ({ hive, agents, onRunAge
     refetchInterval: 10000,
   });
 
-  // Determine the active goal (planning or executing)
   const activeGoal = useMemo(() => {
     return goals.find(g => g.status === 'planning' || g.status === 'executing');
   }, [goals]);
@@ -55,7 +60,7 @@ export const HiveCommand: React.FC<HiveCommandProps> = ({ hive, agents, onRunAge
     refetchInterval: 5000,
   });
 
-  // ==================== EXECUTION LOGS ====================
+  // Execution logs
   const { data: logs = [], isLoading: logsLoading } = useQuery({
     queryKey: ['executionLogs', hive.id, currentGoalId],
     queryFn: () => currentGoalId ? orchestratorService.getExecutionLogs(hive.id, currentGoalId, 200) : [],
@@ -76,7 +81,6 @@ export const HiveCommand: React.FC<HiveCommandProps> = ({ hive, agents, onRunAge
       return `[${timestamp}] ${level} ${task} ${iter} ${log.message}`;
     }).join('\n');
 
-    // Try modern clipboard API first, fall back to execCommand
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(logText).then(() => {
         toast.success('Logs copied to clipboard');
@@ -101,10 +105,14 @@ export const HiveCommand: React.FC<HiveCommandProps> = ({ hive, agents, onRunAge
       toast.error('Failed to copy logs');
     }
   };
-  // ========================================================
 
   const handleExecute = async () => {
     if (!goalInput.trim()) return;
+    const primaryModel = getPrimaryModel();
+    if (!primaryModel) {
+      setShowNoPrimaryModal(true);
+      return;
+    }
     setExecuting(true);
     try {
       const result = await orchestratorService.createGoal(hive.id, {
@@ -123,14 +131,23 @@ export const HiveCommand: React.FC<HiveCommandProps> = ({ hive, agents, onRunAge
     }
   };
 
-  const handleCancelGoal = async () => {
-    if (!activeGoal) return;
-    if (!confirm('Cancel current goal? This will stop all associated tasks.')) return;
-    // TODO: implement goal cancellation
-    toast('Goal cancellation not yet implemented');
+  const handleCancelGoal = () => {
+    setShowCancelConfirm(true);
   };
 
-  // Stats (similar to old Dashboard)
+  const confirmCancelGoal = async () => {
+    if (!activeGoal) return;
+    try {
+      await orchestratorService.cancelGoal(hive.id, activeGoal.id);
+      toast.success('Goal cancelled');
+      setShowCancelConfirm(false);
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to cancel goal');
+      setShowCancelConfirm(false);
+    }
+  };
+
+  // Stats
   const stats = useMemo(() => {
     const totalTokens = agents.reduce((acc, a) => acc + a.memory.tokenCount, 0);
     const activeNodes = agents.filter(a => a.status === 'RUNNING').length;
@@ -152,7 +169,6 @@ export const HiveCommand: React.FC<HiveCommandProps> = ({ hive, agents, onRunAge
   const assignedTasks = tasks.filter(t => t.status === 'assigned').length;
   const completedTasks = tasks.filter(t => t.status === 'completed').length;
 
-  // Helper to get color for log level
   const getLevelColor = (level: ExecutionLogLevel): string => {
     switch (level) {
       case ExecutionLogLevel.ERROR:
@@ -274,7 +290,6 @@ export const HiveCommand: React.FC<HiveCommandProps> = ({ hive, agents, onRunAge
           <p className="text-sm text-zinc-300 mb-4">{activeGoal.description}</p>
 
           {activeTab === 'tasks' ? (
-            /* TASKS TAB */
             <>
               {tasksLoading ? (
                 <div className="flex justify-center py-8">
@@ -310,7 +325,6 @@ export const HiveCommand: React.FC<HiveCommandProps> = ({ hive, agents, onRunAge
                 </div>
               )}
 
-              {/* Recent Artifacts */}
               {artifacts.length > 0 && (
                 <div className="mt-6 pt-4 border-t border-zinc-800">
                   <h4 className="text-xs font-black uppercase tracking-widest text-zinc-500 mb-3">Recent Artifacts</h4>
@@ -333,7 +347,6 @@ export const HiveCommand: React.FC<HiveCommandProps> = ({ hive, agents, onRunAge
               )}
             </>
           ) : (
-            /* LOGS TAB */
             <div className="space-y-4">
               <div className="flex justify-between items-center">
                 <h4 className="text-xs font-black uppercase tracking-widest text-zinc-500">Execution Logs</h4>
@@ -374,6 +387,25 @@ export const HiveCommand: React.FC<HiveCommandProps> = ({ hive, agents, onRunAge
           )}
         </div>
       )}
+
+      {/* Modals */}
+      <AlertModal
+        isOpen={showNoPrimaryModal}
+        onClose={() => setShowNoPrimaryModal(false)}
+        title="Primary AI Not Configured"
+        message="A primary AI model is required to create a goal. Please go to Global Config > Integrations > Environment and set up a provider with a primary model."
+        confirmText="OK"
+      />
+
+      <ConfirmationModal
+        isOpen={showCancelConfirm}
+        onClose={() => setShowCancelConfirm(false)}
+        onConfirm={confirmCancelGoal}
+        title="Cancel Goal"
+        message="Are you sure you want to cancel the current goal? All associated tasks will be stopped."
+        confirmText="Yes, Cancel"
+        variant="danger"
+      />
     </div>
   );
 };

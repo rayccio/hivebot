@@ -36,7 +36,6 @@ class TaskRepository:
         return [HiveTask.model_validate(t.data) for t in db_tasks]
 
     async def get_by_hive_id(self, hive_id: str) -> List[HiveTask]:
-        """Return all tasks belonging to a hive (by checking data->>'hiveId')."""
         result = await self.db.execute(
             text("SELECT data FROM tasks WHERE data->>'hiveId' = :hive_id"),
             {"hive_id": hive_id}
@@ -48,6 +47,14 @@ class TaskRepository:
         result = await self.db.execute(
             text("SELECT data FROM tasks WHERE data->>'goalId' = :goal_id"),
             {"goal_id": goal_id}
+        )
+        rows = result.fetchall()
+        return [HiveTask.model_validate(r[0]) for r in rows]
+
+    async def get_by_agent_id(self, agent_id: str) -> List[HiveTask]:
+        result = await self.db.execute(
+            text("SELECT data FROM tasks WHERE data->>'assigned_agent_id' = :agent_id"),
+            {"agent_id": agent_id}
         )
         rows = result.fetchall()
         return [HiveTask.model_validate(r[0]) for r in rows]
@@ -74,4 +81,3 @@ class TaskRepository:
         )
         await self.db.commit()
         return result.rowcount > 0
-
