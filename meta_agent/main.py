@@ -12,7 +12,6 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy import select, text
 from pathlib import Path
 
-# Configure logging to file
 LOG_DIR = Path("/app/logs")
 LOG_DIR.mkdir(exist_ok=True)
 logging.basicConfig(
@@ -39,14 +38,12 @@ DATABASE_URL = f"postgresql+asyncpg://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTG
 engine = create_async_engine(DATABASE_URL, echo=False)
 AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
-# --- Configuration ---
 EVALUATION_PERIOD_HOURS = 24
 MIN_TASKS_FOR_EVALUATION = 5
 TEST_TASK_SAMPLE_SIZE = 10
 MAX_TEST_AGENTS_PER_CYCLE = 5
-PROMOTION_THRESHOLD = 0.05  # 5% improvement
+PROMOTION_THRESHOLD = 0.05
 
-# --- Database helpers ---
 async def fetch_all_agents():
     async with AsyncSessionLocal() as session:
         result = await session.execute(
@@ -103,7 +100,6 @@ async def delete_agent(agent_id: str):
         )
         await session.commit()
 
-# --- Fetch evaluation tasks from DB ---
 async def fetch_evaluation_tasks(limit: int = TEST_TASK_SAMPLE_SIZE):
     async with AsyncSessionLocal() as session:
         result = await session.execute(
@@ -123,7 +119,6 @@ async def fetch_evaluation_tasks(limit: int = TEST_TASK_SAMPLE_SIZE):
             })
         return tasks
 
-# --- Fetch available models from provider config ---
 async def fetch_available_models():
     async with httpx.AsyncClient() as client:
         resp = await client.get(
@@ -140,11 +135,9 @@ async def fetch_available_models():
                         models.append(f"{provider_key}/{model_id}")
         return models
 
-# --- Generate a dummy goal_id per evaluation run ---
 def generate_goal_id():
     return f"g-{uuid.uuid4().hex[:8]}"
 
-# --- Performance metrics (from DB) ---
 async def get_agent_performance(agent_id: str, hours: int = EVALUATION_PERIOD_HOURS):
     since = datetime.utcnow() - timedelta(hours=hours)
     async with AsyncSessionLocal() as session:
@@ -187,16 +180,13 @@ async def get_agent_performance(agent_id: str, hours: int = EVALUATION_PERIOD_HO
             "period_hours": hours
         }
 
-# --- Run a single task on an agent and wait for completion using Redis ---
 async def run_task_and_wait(agent_id: str, goal_id: str, task_description: str, input_data: dict, timeout: int = 60) -> bool:
     import uuid
     task_id = f"t-{uuid.uuid4().hex[:8]}"
-    
     redis_client = await redis.from_url(f"redis://{REDIS_HOST}:{REDIS_PORT}", decode_responses=True)
     completion_channel = f"task:{goal_id}:completed"
     pubsub = redis_client.pubsub()
     await pubsub.subscribe(completion_channel)
-    
     message = {
         "type": "task_assign",
         "task_id": task_id,
@@ -206,7 +196,6 @@ async def run_task_and_wait(agent_id: str, goal_id: str, task_description: str, 
         "simulation": True
     }
     await redis_client.publish(f"agent:{agent_id}", json.dumps(message))
-    
     start = datetime.utcnow()
     async for msg in pubsub.listen():
         if msg["type"] != "message":
@@ -221,13 +210,11 @@ async def run_task_and_wait(agent_id: str, goal_id: str, task_description: str, 
             continue
         if (datetime.utcnow() - start).total_seconds() > timeout:
             break
-    
     await pubsub.unsubscribe(completion_channel)
     await redis_client.close()
     logger.warning(f"Task {task_id} timed out")
     return False
 
-# --- Run evaluation on agent with given tasks ---
 async def evaluate_agent(agent_id: str, tasks: list) -> dict:
     goal_id = generate_goal_id()
     success_count = 0
@@ -244,9 +231,7 @@ async def evaluate_agent(agent_id: str, tasks: list) -> dict:
         "results": results
     }
 
-# --- Variant generation with provider-aware model mutation ---
 async def generate_variant(original_agent: dict, mutation_type: str = "temperature") -> dict:
-    """Create a slightly modified copy of the agent for A/B testing."""
     variant = original_agent.copy()
     variant["id"] = None
     variant["name"] = f"{original_agent.get('name', 'Agent')} (test)"
@@ -280,7 +265,6 @@ async def generate_variant(original_agent: dict, mutation_type: str = "temperatu
     variant["reasoning"] = reasoning
     return variant
 
-# --- Main meta-agent loop ---
 async def meta_agent_loop():
     while True:
         logger.info("Meta-agent waking up for self-improvement cycle...")

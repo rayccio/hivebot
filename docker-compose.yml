@@ -52,7 +52,6 @@ services:
       - hivebot_network
     ports:
       - "6333:6333"
-    # No healthcheck – backend will retry connection
 
   backend:
     build:
@@ -69,6 +68,8 @@ services:
         condition: service_healthy
       qdrant:
         condition: service_started
+    env_file:
+      - .env
     environment:
       - ENVIRONMENT=production
       - REDIS_HOST=redis
@@ -89,6 +90,7 @@ services:
       - hivebot_secrets:/app/data/secrets
       - ./global_files:/app/data/global_files
       - ./data:/app/data
+      - ./logs/backend:/app/logs
       - ./.env:/app/.env
     networks:
       - hivebot_network
@@ -99,7 +101,7 @@ services:
       interval: 30s
       timeout: 5s
       retries: 5
-      start_period: 60s   # increased from 10s to 60s
+      start_period: 60s
 
   worker:
     build:
@@ -128,6 +130,7 @@ services:
     volumes:
       - ./agents:/app/data/agents
       - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./logs/worker:/app/logs
     networks:
       - hivebot_network
     deploy:
@@ -156,6 +159,7 @@ services:
       - EMBEDDING_DIM=384
     volumes:
       - ./agents:/app/data/agents
+      - ./logs/embedding-worker:/app/logs
     networks:
       - hivebot_network
 
@@ -171,6 +175,8 @@ services:
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+    volumes:
+      - ./logs/simulator:/app/logs
     networks:
       - hivebot_network
     ports:
@@ -199,6 +205,8 @@ services:
       - INTERNAL_API_KEY=${INTERNAL_API_KEY}
       - ORCHESTRATOR_URL=http://backend:8000
       - SIMULATOR_URL=http://simulator:8080
+    volumes:
+      - ./logs/meta-agent:/app/logs
     networks:
       - hivebot_network
 
@@ -225,10 +233,12 @@ services:
       - SCHEDULER_ENABLED=true
       - SCHEDULER_AUTO_ASSIGN=true
       - TASK_TIMEOUT_SECONDS=300
+    volumes:
+      - ./logs/scheduler:/app/logs
     networks:
       - hivebot_network
     ports:
-      - "8087:8087"   # health endpoint
+      - "8087:8087"
 
   frontend:
     build:

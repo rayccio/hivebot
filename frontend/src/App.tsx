@@ -611,7 +611,7 @@ const AppContent: React.FC = () => {
             onSelectHive={handleSelectHive}
             onCreateHive={handleCreateHive}
             onDeleteHive={handleDeleteHive}
-            selectedId={selectedAgentId} 
+            selectedId={selectedAgentId}
             onSelect={handleSelectAgent}
             onCreate={handleCreateAgent}
             onDelete={handleDeleteAgent}

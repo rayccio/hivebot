@@ -11,7 +11,6 @@ from typing import List, Dict, Any
 import hashlib
 from pathlib import Path
 
-# Configure logging to file
 LOG_DIR = Path("/app/logs")
 LOG_DIR.mkdir(exist_ok=True)
 logging.basicConfig(
@@ -35,11 +34,9 @@ EMBEDDING_DIM = int(os.getenv("EMBEDDING_DIM", 384))
 
 COLLECTION_NAME = "hive_mind"
 
-# Load embedding model once at startup
 model = SentenceTransformer(EMBEDDING_MODEL)
 
 async def ensure_collection(qdrant: AsyncQdrantClient):
-    """Create collection if it doesn't exist."""
     collections = await qdrant.get_collections()
     if COLLECTION_NAME not in [c.name for c in collections.collections]:
         await qdrant.create_collection(
@@ -49,11 +46,9 @@ async def ensure_collection(qdrant: AsyncQdrantClient):
         logger.info(f"Created collection {COLLECTION_NAME}")
 
 def generate_point_id(text: str) -> str:
-    """Generate a stable ID for a given text (to avoid duplicates)."""
     return hashlib.sha256(text.encode()).hexdigest()
 
 async def process_message_task(agent_id: str, hive_id: str, text: str, timestamp: str):
-    """Generate embedding for a single message and store in Qdrant."""
     if not text.strip():
         return
     vector = model.encode(text).tolist()
@@ -74,7 +69,6 @@ async def process_message_task(agent_id: str, hive_id: str, text: str, timestamp
     logger.debug(f"Embedded message from agent {agent_id}")
 
 async def process_file_task(file_path: str, hive_id: str, file_id: str, agent_id: str = None):
-    """Read file, chunk (if large), and embed each chunk."""
     try:
         with open(file_path, "r", encoding="utf-8") as f:
             content = f.read()
@@ -82,13 +76,11 @@ async def process_file_task(file_path: str, hive_id: str, file_id: str, agent_id
         logger.error(f"Failed to read file {file_path}: {e}")
         return
 
-    # Simple chunking: split by paragraphs, max 1000 chars each
     chunks = []
     for para in content.split("\n\n"):
         if not para.strip():
             continue
         if len(para) > 1000:
-            # further split into sentences
             sentences = para.split(". ")
             chunk = ""
             for sent in sentences:

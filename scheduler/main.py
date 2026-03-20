@@ -44,11 +44,10 @@ INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY")
 if not INTERNAL_API_KEY:
     raise ValueError("INTERNAL_API_KEY environment variable is required")
 
-TASK_TIMEOUT_SECONDS = int(os.getenv("TASK_TIMEOUT_SECONDS", 300))  # 5 minutes
-ORCHESTRATOR_INTERVAL = int(os.getenv("ORCHESTRATOR_INTERVAL", 5))   # seconds between loops
+TASK_TIMEOUT_SECONDS = int(os.getenv("TASK_TIMEOUT_SECONDS", 300))
+ORCHESTRATOR_INTERVAL = int(os.getenv("ORCHESTRATOR_INTERVAL", 5))
 
 async def wait_for_db(pg_pool, retries=30, delay=2):
-    """Wait for the agents and goals tables to exist."""
     for attempt in range(retries):
         try:
             async with pg_pool.acquire() as conn:
@@ -81,7 +80,6 @@ async def start_health_server():
     logger.info("Health server started on port 8087")
 
 async def populate_pending_tasks(pg_pool, redis_client):
-    """Load all pending tasks from DB and add to Redis sorted set."""
     async with pg_pool.acquire() as conn:
         rows = await conn.fetch("SELECT id, data, created_at FROM tasks WHERE data->>'status' = 'pending'")
         logger.info(f"Found {len(rows)} pending tasks in DB")
@@ -96,7 +94,6 @@ async def populate_pending_tasks(pg_pool, redis_client):
     logger.info(f"Populated {len(rows)} pending tasks into Redis")
 
 async def populate_idle_agents(pg_pool, redis_client):
-    """Load all idle agents from DB and add to Redis set."""
     async with pg_pool.acquire() as conn:
         rows = await conn.fetch("SELECT id FROM agents WHERE data->>'status' = 'IDLE'")
         for row in rows:
@@ -104,7 +101,6 @@ async def populate_idle_agents(pg_pool, redis_client):
     logger.info(f"Populated {len(rows)} idle agents into Redis")
 
 async def fetch_goals(pg_pool, statuses):
-    """Fetch goals with given statuses."""
     async with pg_pool.acquire() as conn:
         rows = await conn.fetch(
             "SELECT data FROM goals WHERE data->>'status' = ANY($1)",
@@ -119,9 +115,7 @@ async def fetch_goals(pg_pool, statuses):
         return goals
 
 async def fetch_tasks_for_goal(pg_pool, goal_id):
-    """Fetch all tasks for a goal, trying both possible JSON keys."""
     async with pg_pool.acquire() as conn:
-        # Try with goalId first (camelCase)
         rows = await conn.fetch(
             "SELECT data FROM tasks WHERE data->>'goalId' = $1",
             goal_id
@@ -129,7 +123,6 @@ async def fetch_tasks_for_goal(pg_pool, goal_id):
         if rows:
             logger.debug(f"Found {len(rows)} tasks using key 'goalId' for goal {goal_id}")
         else:
-            # Try with goal_id (snake_case)
             rows = await conn.fetch(
                 "SELECT data FROM tasks WHERE data->>'goal_id' = $1",
                 goal_id
@@ -152,7 +145,6 @@ async def fetch_tasks_for_goal(pg_pool, goal_id):
         return tasks
 
 async def are_dependencies_met(pg_pool, task_id, depends_on):
-    """Check if all dependencies of a task are completed."""
     if not depends_on:
         return True
     async with pg_pool.acquire() as conn:
@@ -169,7 +161,6 @@ async def are_dependencies_met(pg_pool, task_id, depends_on):
         return True
 
 async def spawn_agent_for_task(hive_id, required_skill_ids, agent_type):
-    """Call internal API to spawn an agent."""
     url = f"{ORCHESTRATOR_URL}/api/v1/internal/ai/agents/spawn"
     headers = {"Authorization": f"Bearer {INTERNAL_API_KEY}"}
     payload = {
@@ -194,8 +185,6 @@ async def spawn_agent_for_task(hive_id, required_skill_ids, agent_type):
             return None
 
 async def assign_task(pg_pool, redis_client, task, agent_id):
-    """Assign a task to an agent."""
-    # Update task in DB
     task['status'] = 'assigned'
     task['assigned_agent_id'] = agent_id
     task['started_at'] = datetime.utcnow().isoformat()
@@ -204,7 +193,6 @@ async def assign_task(pg_pool, redis_client, task, agent_id):
             "UPDATE tasks SET data = $1 WHERE id = $2",
             json.dumps(task), task['id']
         )
-    # Update agent status in DB
     async with pg_pool.acquire() as conn:
         agent_row = await conn.fetchrow("SELECT data FROM agents WHERE id = $1", agent_id)
         if agent_row:
@@ -216,10 +204,8 @@ async def assign_task(pg_pool, redis_client, task, agent_id):
                 "UPDATE agents SET data = $1 WHERE id = $2",
                 json.dumps(agent_data), agent_id
             )
-    # Remove from Redis queues
     await redis_client.zrem("tasks:pending", task['id'])
     await redis_client.srem("agents:idle", agent_id)
-    # Publish task_assign message
     message = {
         'type': 'task_assign',
         'task_id': task['id'],
@@ -232,8 +218,6 @@ async def assign_task(pg_pool, redis_client, task, agent_id):
     logger.info(f"Assigned task {task['id']} to agent {agent_id}")
 
 async def handle_task_completion(pg_pool, redis_client, goal_id, task_id, output):
-    """Handle task completion: update task status and push new ready tasks."""
-    # Fetch task
     async with pg_pool.acquire() as conn:
         row = await conn.fetchrow("SELECT data FROM tasks WHERE id = $1", task_id)
         if not row:
@@ -250,7 +234,6 @@ async def handle_task_completion(pg_pool, redis_client, goal_id, task_id, output
             json.dumps(task_data), task_id
         )
 
-    # Find dependent tasks
     async with pg_pool.acquire() as conn:
         rows = await conn.fetch(
             "SELECT to_task FROM task_edges WHERE from_task = $1",
@@ -273,7 +256,6 @@ async def handle_task_completion(pg_pool, redis_client, goal_id, task_id, output
                 await redis_client.zadd("tasks:pending", {dep_task_id: score})
                 logger.info(f"Task {dep_task_id} is now ready and added to pending")
 
-    # Check if goal is complete
     async with pg_pool.acquire() as conn:
         rows = await conn.fetch(
             "SELECT data FROM tasks WHERE data->>'goalId' = $1 OR data->>'goal_id' = $1",
@@ -293,7 +275,6 @@ async def handle_task_completion(pg_pool, redis_client, goal_id, task_id, output
             logger.info(f"Goal {goal_id} completed")
 
 async def orchestrator_loop(pg_pool, redis_client):
-    """Main orchestrator loop: process goals and assign tasks."""
     logger.info("Orchestrator loop started")
     while True:
         try:
@@ -362,7 +343,6 @@ async def orchestrator_loop(pg_pool, redis_client):
         await asyncio.sleep(ORCHESTRATOR_INTERVAL)
 
 async def listen_for_task_completions(pg_pool, redis_client):
-    """Subscribe to task completion events and handle them."""
     pubsub = redis_client.pubsub()
     await pubsub.psubscribe("task:*:completed")
     logger.info("Subscribed to task:*:completed")
@@ -381,10 +361,8 @@ async def listen_for_task_completions(pg_pool, redis_client):
             logger.error(f"Error processing task completion: {e}")
 
 async def maintenance_loop(pg_pool, redis_client):
-    """Periodically remove tasks that are no longer pending from Redis, and handle timeouts."""
     while True:
         await asyncio.sleep(30)
-        # Remove completed/failed tasks
         task_ids = await redis_client.zrange("tasks:pending", 0, -1)
         if task_ids:
             async with pg_pool.acquire() as conn:
@@ -402,7 +380,6 @@ async def maintenance_loop(pg_pool, redis_client):
                         await redis_client.zrem("tasks:pending", task_id)
                         logger.debug(f"Removed {task_id} from pending queue (status {task_data['status']})")
 
-        # Handle timed-out tasks (assigned but not completed)
         now = datetime.utcnow()
         async with pg_pool.acquire() as conn:
             rows = await conn.fetch("""

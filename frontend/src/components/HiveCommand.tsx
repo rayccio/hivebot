@@ -81,10 +81,13 @@ export const HiveCommand: React.FC<HiveCommandProps> = ({ hive, agents, onRunAge
       return `[${timestamp}] ${level} ${task} ${iter} ${log.message}`;
     }).join('\n');
 
+    console.log('Copying logs:', logText); // debug
+
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(logText).then(() => {
         toast.success('Logs copied to clipboard');
-      }).catch(() => {
+      }).catch((err) => {
+        console.error('Clipboard write failed:', err);
         fallbackCopy(logText);
       });
     } else {

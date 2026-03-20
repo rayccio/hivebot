@@ -1,4 +1,21 @@
 # backend/app/main.py
+import logging
+import os
+from pathlib import Path
+
+# Configure root logger to write to file
+LOG_DIR = Path("/app/logs")
+LOG_DIR.mkdir(exist_ok=True)
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler(LOG_DIR / "backend.log")
+    ]
+)
+
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -20,25 +37,12 @@ from .api.v1.endpoints.bridges import BRIDGE_CONTAINERS
 from .core.database import engine, Base
 from .models import db_models
 from sentence_transformers import SentenceTransformer
-import logging
-import os
 import asyncio
 import json
 import litellm
 import secrets as pysecrets
 from datetime import datetime
 
-LOG_DIR = "/app/logs"
-os.makedirs(LOG_DIR, exist_ok=True)
-
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler(f"{LOG_DIR}/backend.log")
-    ]
-)
 logger = logging.getLogger(__name__)
 
 async def init_db():
@@ -104,6 +108,7 @@ def create_app() -> FastAPI:
             content={"detail": "Internal server error", "code": "INTERNAL_ERROR"}
         )
 
+    # CORS middleware with origins from settings
     if settings.cors_origins:
         app.add_middleware(
             CORSMiddleware,

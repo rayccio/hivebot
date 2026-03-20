@@ -8,7 +8,6 @@ import uvicorn
 import redis.asyncio as redis
 from pathlib import Path
 
-# Configure logging to file
 LOG_DIR = Path("/app/logs")
 LOG_DIR.mkdir(exist_ok=True)
 logging.basicConfig(
@@ -39,7 +38,6 @@ async def shutdown():
     if redis_client:
         await redis_client.close()
 
-# Mock endpoints for various tools
 @app.post("/mock/ssh_execute")
 async def mock_ssh_execute(request: Request):
     payload = await request.json()
@@ -98,7 +96,6 @@ async def mock_run_code(request: Request):
         "exit_code": 0
     }
 
-# Catch-all for any other tool
 @app.post("/mock/{tool_name:path}")
 async def mock_tool(tool_name: str, request: Request):
     payload = await request.json()
