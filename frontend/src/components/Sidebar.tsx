@@ -24,15 +24,15 @@ interface SidebarProps {
   onGlobalConfigSubTabChange: (subTab: string) => void;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ 
-  agents, 
-  hives, 
-  activeHiveId, 
-  onSelectHive, 
-  onCreateHive, 
+export const Sidebar: React.FC<SidebarProps> = ({
+  agents,
+  hives,
+  activeHiveId,
+  onSelectHive,
+  onCreateHive,
   onDeleteHive,
-  selectedId, 
-  onSelect, 
+  selectedId,
+  onSelect,
   onCreate,
   onDelete,
   isCreating,
@@ -57,7 +57,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {/* Hive Switcher Section */}
       <div className="p-4 border-b border-zinc-800 bg-zinc-950/30">
         <div className="relative">
-          <button 
+          <button
             onClick={() => setShowHiveList(!showHiveList)}
             className="w-full flex items-center justify-between p-3 bg-zinc-900 border border-zinc-800 rounded-xl hover:border-emerald-500/30 transition-all group"
           >
@@ -93,7 +93,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       {activeHiveId === hive.id && <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" />}
                     </button>
                     {hives.length > 1 && currentUser?.role === 'GLOBAL_ADMIN' && (
-                      <button 
+                      <button
                         onClick={(e) => { e.stopPropagation(); if (window.confirm('Delete this hive?')) onDeleteHive(hive.id); }}
                         className="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-zinc-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all"
                       >
@@ -104,7 +104,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 ))}
               </div>
               {currentUser?.role === 'GLOBAL_ADMIN' && (
-                <button 
+                <button
                   onClick={() => { onCreateHive(); setShowHiveList(false); }}
                   className="w-full p-4 bg-zinc-950/50 border-t border-zinc-800 text-emerald-500 hover:text-emerald-400 text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-colors"
                 >
@@ -231,66 +231,66 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
           </div>
         ) : (
-          /* Hive Navigation */
-          <>
-            <button 
-              onClick={() => onSelect(null)}
+          /* Hive Navigation – only Command, Brain, Team, Context, History */
+          <div className="space-y-2">
+            <button
+              onClick={() => { onViewChange('command'); onClose(); }}
               className={`w-full flex items-center gap-4 px-4 py-3 rounded-2xl transition-all ${
-                selectedId === null ? 'bg-zinc-800 text-white shadow-xl' : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-900/50'
+                currentView === 'command' ? 'bg-zinc-800 text-white shadow-xl' : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-900/50'
               }`}
             >
-              <Icons.Box />
-              <span className="text-xs font-black uppercase tracking-widest">Hive Map</span>
+              <Icons.Terminal />
+              <span className="text-xs font-black uppercase tracking-widest">Command</span>
             </button>
 
-            <div className="my-6 border-t border-zinc-800/50 mx-4"></div>
+            <button
+              onClick={() => { onViewChange('brain'); onClose(); }}
+              className={`w-full flex items-center gap-4 px-4 py-3 rounded-2xl transition-all ${
+                currentView === 'brain' ? 'bg-zinc-800 text-white shadow-xl' : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-900/50'
+              }`}
+            >
+              <Icons.Layers />
+              <span className="text-xs font-black uppercase tracking-widest">Brain</span>
+            </button>
 
-            {agents.length === 0 && (
-              <p className="text-zinc-500 text-xs italic text-center py-4">No active agents for this hive.</p>
-            )}
-            {agents.map(agent => (
-              <div key={agent.id} className="flex items-center group">
-                <button
-                  onClick={() => onSelect(agent.id)}
-                  className={`flex-1 flex items-center justify-between px-4 py-4 rounded-2xl transition-all ${
-                    selectedId === agent.id ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'text-zinc-500 hover:bg-zinc-900/50'
-                  }`}
-                >
-                  <div className="flex items-center gap-4 overflow-hidden">
-                    <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${
-                      agent.status === AgentStatus.RUNNING ? 'bg-emerald-500 animate-pulse' : 
-                      agent.status === AgentStatus.ERROR ? 'bg-red-500' : 'bg-zinc-700'
-                    }`} />
-                    <div className="truncate text-left">
-                      <p className="text-xs font-black truncate uppercase tracking-tighter">{agent.name}</p>
-                      <p className="text-[9px] opacity-40 truncate font-mono tracking-widest">{agent.id}</p>
-                    </div>
-                  </div>
-                </button>
-                <button
-                  onClick={() => {
-                    if (window.confirm(`Delete agent "${agent.name}"?`)) {
-                      onDelete(agent.id);
-                    }
-                  }}
-                  className="ml-2 p-2 text-zinc-600 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
-                  title="Delete Agent"
-                >
-                  <Icons.Trash className="w-4 h-4" />
-                </button>
-              </div>
-            ))}
-          </>
+            <button
+              onClick={() => { onViewChange('team'); onClose(); }}
+              className={`w-full flex items-center gap-4 px-4 py-3 rounded-2xl transition-all ${
+                currentView === 'team' ? 'bg-zinc-800 text-white shadow-xl' : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-900/50'
+              }`}
+            >
+              <Icons.User />
+              <span className="text-xs font-black uppercase tracking-widest">Team</span>
+            </button>
+
+            <button
+              onClick={() => { onViewChange('context'); onClose(); }}
+              className={`w-full flex items-center gap-4 px-4 py-3 rounded-2xl transition-all ${
+                currentView === 'context' ? 'bg-zinc-800 text-white shadow-xl' : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-900/50'
+              }`}
+            >
+              <Icons.File />
+              <span className="text-xs font-black uppercase tracking-widest">Context</span>
+            </button>
+
+            <button
+              onClick={() => { onViewChange('history'); onClose(); }}
+              className={`w-full flex items-center gap-4 px-4 py-3 rounded-2xl transition-all ${
+                currentView === 'history' ? 'bg-zinc-800 text-white shadow-xl' : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-900/50'
+              }`}
+            >
+              <Icons.History />
+              <span className="text-xs font-black uppercase tracking-widest">History</span>
+            </button>
+          </div>
         )}
       </div>
 
       {/* Footer – Global Config button (only for admins) */}
       {currentUser?.role === 'GLOBAL_ADMIN' && (
         <div className="p-4 border-t border-zinc-800 bg-zinc-950/50">
-          {currentView === 'global-config' ? (
-            null
-          ) : (
-            <button 
+          {currentView === 'global-config' ? null : (
+            <button
               onClick={() => { onViewChange('global-config'); onClose(); }}
               className="w-full flex items-center gap-4 px-4 py-3 rounded-2xl transition-all hover:bg-zinc-900 text-zinc-400 border border-transparent hover:border-emerald-500/30"
             >

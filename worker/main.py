@@ -12,9 +12,17 @@ from sqlalchemy import select, text
 import re
 from typing import Optional
 
+# Import role prompts from local constants
 import constants
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler('/app/logs/worker.log')
+    ]
+)
 logger = logging.getLogger("hivebot-worker")
 
 REDIS_HOST = os.getenv("REDIS_HOST", "redis")
@@ -220,6 +228,7 @@ IMPORTANT: You are NOT a generic AI assistant. You are the entity described abov
         asyncio.create_task(log_execution(goal_id, "info", f"Starting iteration {iteration}", task_id, agent_id, iteration))
         logger.info(f"Agent {agent_id} – Iteration {iteration} for task {task_id}")
 
+        # Builder step
         builder_input = f"""Task: {description}
 Additional input: {json.dumps(input_data, indent=2)}
 Previous code (if any): {current_code or 'None'}
@@ -230,15 +239,25 @@ Generate the code for this task. Output only the code, no explanations."""
         await save_artifact(hive_id, goal_id, task_id, file_path, code.encode(), status="draft")
         current_code = code
 
+        # Tester step – enforce JSON output
         tester_input = f"""Task: {description}
 Code to test:
 {code}
-Write and run tests for this code. Output the test results in JSON format with keys "passed" (bool) and "errors" (list of strings)."""
+Write and run tests for this code. Output the test results **strictly as a JSON object** with exactly two keys: "passed" (boolean) and "errors" (list of strings). Do not include any other text. Example: {{"passed": false, "errors": ["Test failed because ..."]}}"""
         test_result_text = await call_with_role(tester_prompt, tester_input)
+        # Attempt to parse JSON; if fails, treat as failure with error message
         try:
-            test_result = json.loads(test_result_text)
-        except:
-            test_result = {"passed": False, "errors": ["Failed to parse test output"]}
+            # Try to extract JSON from response (in case there is extra text)
+            json_match = re.search(r'\{.*\}', test_result_text, re.DOTALL)
+            if json_match:
+                test_result = json.loads(json_match.group())
+            else:
+                test_result = json.loads(test_result_text)
+            if not isinstance(test_result, dict) or "passed" not in test_result:
+                raise ValueError("Missing 'passed' key")
+        except Exception as e:
+            logger.warning(f"Failed to parse tester output: {e}\nOutput: {test_result_text[:500]}")
+            test_result = {"passed": False, "errors": [f"Invalid test output: {test_result_text[:200]}"]}
         await save_artifact(hive_id, goal_id, task_id, f"task_{task_id}/iteration_{iteration}/test_result.json", json.dumps(test_result).encode(), status="tested")
 
         if test_result.get("passed"):
@@ -250,6 +269,7 @@ Write and run tests for this code. Output the test results in JSON format with k
         else:
             asyncio.create_task(log_execution(goal_id, "warning", f"Tests failed on iteration {iteration}: {test_result.get('errors', [])}", task_id, agent_id, iteration))
 
+        # Reviewer step
         reviewer_input = f"""Task: {description}
 Code:
 {code}
@@ -260,6 +280,7 @@ List the issues in the code that caused the test failures. Provide a list of act
         await save_artifact(hive_id, goal_id, task_id, f"task_{task_id}/iteration_{iteration}/issues.txt", issues.encode(), status="reviewed")
         asyncio.create_task(log_execution(goal_id, "info", f"Review completed, issues identified", task_id, agent_id, iteration))
 
+        # Fixer step
         fixer_input = f"""Task: {description}
 Code:
 {code}
@@ -374,6 +395,7 @@ async def process_task_assign(agent_id, task_id, description, input_data, goal_i
             logger.error(f"Agent {agent_id} not found in DB")
             return
 
+        # Ensure memory structure
         if "memory" not in agent_data:
             agent_data["memory"] = {"shortTerm": [], "summary": "", "tokenCount": 0}
         else:
@@ -473,6 +495,8 @@ async def worker_loop():
             logger.warning(f"Unknown command {cmd} for agent {agent_id}")
 
 async def main():
+    # Ensure logs directory exists
+    os.makedirs('/app/logs', exist_ok=True)
     logger.info("Starting HiveBot worker...")
     try:
         await worker_loop()

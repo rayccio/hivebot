@@ -21,13 +21,24 @@ from .core.database import engine, Base
 from .models import db_models
 from sentence_transformers import SentenceTransformer
 import logging
+import os
 import asyncio
 import json
 import litellm
 import secrets as pysecrets
 from datetime import datetime
 
-logging.basicConfig(level=logging.INFO)
+LOG_DIR = "/app/logs"
+os.makedirs(LOG_DIR, exist_ok=True)
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler(f"{LOG_DIR}/backend.log")
+    ]
+)
 logger = logging.getLogger(__name__)
 
 async def init_db():

@@ -10,7 +10,17 @@ import httpx
 from typing import List, Dict, Any
 import hashlib
 
-logging.basicConfig(level=logging.INFO)
+LOG_DIR = "/app/logs"
+os.makedirs(LOG_DIR, exist_ok=True)
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler(f"{LOG_DIR}/embedding-worker.log")
+    ]
+)
 logger = logging.getLogger("embedding-worker")
 
 REDIS_HOST = os.getenv("REDIS_HOST", "redis")

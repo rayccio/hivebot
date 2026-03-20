@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-# HiveBot Production Installer – Phase 10
+# HiveBot Production Installer
 # Run from project root.
 
 # Color codes
@@ -51,7 +51,7 @@ fi
 
 show_banner
 
-echo -e "${GREEN}🚀 HiveBot Production Installer (Phase 10)${NC}"
+echo -e "${GREEN}🚀 HiveBot Production Installer${NC}"
 echo "----------------------------------------"
 
 # --- 1. Check prerequisites ---
@@ -150,7 +150,7 @@ ENVIRONMENT=production
 DEBUG=false
 
 # Backend CORS: comma‑separated list of allowed origins
-BACKEND_CORS_ORIGINS=http://localhost,http://localhost:3000,http://${PUBLIC_IP},http://${PUBLIC_IP}:80,http://${URL_IP},http://${URL_IP}:80,http://${URL_IP}:8080
+BACKEND_CORS_ORIGINS=http://localhost,http://localhost:3000,http://${PUBLIC_IP},http://${PUBLIC_IP}:80,http://${URL_IP}:8080
 
 # Redis
 REDIS_HOST=redis

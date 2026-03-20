@@ -7,7 +7,17 @@ from fastapi import FastAPI, Request, HTTPException
 import uvicorn
 import redis.asyncio as redis
 
-logging.basicConfig(level=logging.INFO)
+LOG_DIR = "/app/logs"
+os.makedirs(LOG_DIR, exist_ok=True)
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler(f"{LOG_DIR}/simulator.log")
+    ]
+)
 logger = logging.getLogger("simulator")
 
 REDIS_HOST = os.getenv("REDIS_HOST", "redis")

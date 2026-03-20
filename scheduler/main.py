@@ -8,8 +8,17 @@ import httpx
 from datetime import datetime, timedelta
 from aiohttp import web
 
-# Set logging to INFO level
-logging.basicConfig(level=logging.INFO)
+LOG_DIR = "/app/logs"
+os.makedirs(LOG_DIR, exist_ok=True)
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler(f"{LOG_DIR}/scheduler.log")
+    ]
+)
 logger = logging.getLogger("hive-core")
 
 # Redis settings
