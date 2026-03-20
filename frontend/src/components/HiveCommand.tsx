@@ -64,7 +64,7 @@ export const HiveCommand: React.FC<HiveCommandProps> = ({ hive, agents, onRunAge
   });
 
   const copyLogsToClipboard = () => {
-    if (logs.length === 0) {
+    if (!logs || logs.length === 0) {
       toast('No logs to copy');
       return;
     }

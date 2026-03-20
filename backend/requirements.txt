@@ -2,7 +2,7 @@ fastapi==0.115.12
 uvicorn[standard]==0.34.0
 docker==7.1.0
 redis==5.2.1
-litellm==1.63.11
+litellm>=1.65.0
 cryptography==44.0.2
 pydantic==2.10.6
 pydantic-settings==2.7.1

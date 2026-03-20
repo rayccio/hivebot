@@ -142,9 +142,9 @@ async def ai_generate_delta(
             try:
                 query_vector = embedding_model.encode(user_input).tolist()
                 search_hive_ids = [hive_id]
-                if hive_config.accessLevel == HiveMindAccessLevel.SHARED:
-                    search_hive_ids.extend(hive_config.sharedHiveIds)
-                elif hive_config.accessLevel == HiveMindAccessLevel.GLOBAL:
+                if hive_config.access_level == HiveMindAccessLevel.SHARED:
+                    search_hive_ids.extend(hive_config.shared_hive_ids)
+                elif hive_config.access_level == HiveMindAccessLevel.GLOBAL:
                     pass
 
                 filter_condition = models.Filter(
@@ -160,7 +160,7 @@ async def ai_generate_delta(
                 context_blocks = []
                 for item in retrieved:
                     source = item.get("source", "unknown")
-                    content_text = item.get("text", "")   # renamed to avoid shadowing
+                    content_text = item.get("text", "")
                     if source == "message":
                         context_blocks.append(f"Previous conversation: {content_text}")
                     elif source == "file":
