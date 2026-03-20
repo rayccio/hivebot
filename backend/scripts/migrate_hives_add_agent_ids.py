@@ -18,23 +18,21 @@ DATABASE_URL = f"postgresql://{settings.POSTGRES_USER}:{settings.POSTGRES_PASSWO
 async def migrate():
     conn = await asyncpg.connect(DATABASE_URL)
     try:
-        # Fetch all hives
         rows = await conn.fetch("SELECT id, data FROM hives")
         for row in rows:
             hive_id = row['id']
             data = row['data']
             if isinstance(data, str):
                 data = json.loads(data)
-            # Check if 'agentIds' already exists
             if 'agentIds' in data:
                 print(f"Hive {hive_id} already has agentIds, skipping.")
                 continue
-            # If there is an 'agents' array, extract IDs; else empty list
+            # If there is an old 'agents' array, extract IDs; else empty list
             agent_ids = []
             if 'agents' in data and isinstance(data['agents'], list):
                 agent_ids = [a.get('id') for a in data['agents'] if a.get('id')]
             data['agentIds'] = agent_ids
-            # Optionally remove the old 'agents' field to save space (not required)
+            # Optionally remove the old 'agents' field to save space
             # data.pop('agents', None)
             await conn.execute(
                 "UPDATE hives SET data = $1 WHERE id = $2",

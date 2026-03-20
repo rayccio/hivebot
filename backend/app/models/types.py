@@ -243,7 +243,7 @@ class Hive(BaseModel):
     name: str
     description: str = ""
     agent_ids: List[str] = Field(default_factory=list, alias="agentIds")
-    agents: List[Agent] = Field(default_factory=list)
+    agents: List[Agent] = Field(default_factory=list, exclude=True)
     global_user_md: str = ""
     messages: List[Message] = []
     global_files: List[FileEntry] = []

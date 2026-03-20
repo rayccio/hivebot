@@ -19,7 +19,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 class HiveManager:
-    def __init__(self, agent_manager):  # agent_manager is AgentManager instance
+    def __init__(self, agent_manager):
         self.agent_manager = agent_manager
         self.repo = HiveRepository
 
@@ -36,12 +36,11 @@ class HiveManager:
         hive_dir.mkdir(parents=True, exist_ok=True)
 
         now = datetime.utcnow()
-        # Create hive object with empty agent_ids and agents
         hive = Hive(
             id=hive_id,
             name=hive_in.name,
             description=hive_in.description,
-            agent_ids=[],                           # persisted list of IDs
+            agent_ids=[],
             global_user_md=hive_in.global_user_md,
             messages=[],
             global_files=[],
@@ -63,7 +62,6 @@ class HiveManager:
             hive = await repo.get(hive_id)
             if not hive:
                 return None
-            # Populate agents from agent_ids
             agent_ids = hive.agent_ids
             agents = []
             if agent_ids:
@@ -100,7 +98,6 @@ class HiveManager:
             hive = await repo.get(hive_id)
             if not hive:
                 return None
-            # Apply updates (agent_ids is not updated here, only via add/remove)
             update_data = hive_update.model_dump(exclude_unset=True)
             for field, value in update_data.items():
                 if hasattr(hive, field):

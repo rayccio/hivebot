@@ -64,7 +64,6 @@ class GoalEngine:
         return goal
 
     async def cancel_goal(self, goal_id: str) -> Optional[HiveGoal]:
-        """Cancel a goal: set status to FAILED and mark all pending/assigned tasks as CANCELLED."""
         goal = await self.get_goal(goal_id)
         if not goal:
             return None
@@ -78,11 +77,11 @@ class GoalEngine:
                 text("UPDATE goals SET data = :data WHERE id = :id"),
                 {"data": goal.model_dump_json(), "id": goal_id}
             )
-            # Update all pending/assigned tasks to CANCELLED
+            # Update all pending/assigned tasks to CANCELLED using JSONB merge
             await session.execute(
                 text("""
                     UPDATE tasks
-                    SET data = jsonb_set(data, '{status}', '"cancelled"')
+                    SET data = data || '{"status": "cancelled"}'
                     WHERE data->>'goalId' = :goal_id
                       AND (data->>'status' IN ('pending', 'assigned', 'running'))
                 """),
