@@ -28,7 +28,6 @@ class HiveRepository:
         )
         db_hive = result.scalar_one_or_none()
         if db_hive:
-            # We'll reconstruct the Hive object; agents will be populated later by HiveManager
             return Hive(**db_hive.data)
         return None
 
@@ -38,8 +37,6 @@ class HiveRepository:
         return [Hive(**h.data) for h in db_hives]
 
     async def update(self, hive_id: str, updates: dict) -> Hive | None:
-        # updates is a dict of fields to change (usually the whole model data)
-        # We'll exclude 'agents' from being stored
         data = prepare_json_data(updates)
         # Remove 'agents' key if present (since it's not stored)
         data.pop('agents', None)
@@ -49,8 +46,6 @@ class HiveRepository:
             .values(data=data)
         )
         await self.db.commit()
-        # Return the updated hive object (without agents, but caller will re-fetch)
-        # We'll fetch fresh from DB to ensure consistency
         return await self.get(hive_id)
 
     async def delete(self, hive_id: str) -> bool:

@@ -160,13 +160,13 @@ async def ai_generate_delta(
                 context_blocks = []
                 for item in retrieved:
                     source = item.get("source", "unknown")
-                    text = item.get("text", "")
+                    content_text = item.get("text", "")   # renamed to avoid shadowing
                     if source == "message":
-                        context_blocks.append(f"Previous conversation: {text}")
+                        context_blocks.append(f"Previous conversation: {content_text}")
                     elif source == "file":
-                        context_blocks.append(f"File excerpt: {text}")
+                        context_blocks.append(f"File excerpt: {content_text}")
                     else:
-                        context_blocks.append(text)
+                        context_blocks.append(content_text)
                 context_str = "\n\n".join(context_blocks) if context_blocks else ""
             except Exception as e:
                 logger.error(f"Vector search failed: {e}")
