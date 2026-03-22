@@ -1,3 +1,4 @@
+// frontend/src/components/AgentDetails.tsx
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useQueries } from '@tanstack/react-query';
 import { Agent, AgentStatus, Message, FileEntry, ReportingTarget, ChannelConfig, ChannelCredentials, Skill, SkillVersion } from '../types';
@@ -34,6 +35,25 @@ export const AgentDetails: React.FC<AgentDetailsProps> = ({ agent, onUpdate, onR
   const [installedSkills, setInstalledSkills] = useState(agent.skills || []);
   const [showSkillLibrary, setShowSkillLibrary] = useState(false);
   const [skillVersions, setSkillVersions] = useState<Record<string, SkillVersion[]>>({});
+
+  // --- NEW: fetch available roles from the backend ---
+  const [availableRoles, setAvailableRoles] = useState<{ roleName: string; roleType: string }[]>([]);
+  const [loadingRoles, setLoadingRoles] = useState(true);
+  useEffect(() => {
+    const fetchRoles = async () => {
+      try {
+        // Fetch core layer roles (or we could fetch from all layers)
+        const roles = await orchestratorService.listLayerRoles('core');
+        setAvailableRoles(roles);
+      } catch (err) {
+        console.error('Failed to fetch roles', err);
+        toast.error('Failed to load roles');
+      } finally {
+        setLoadingRoles(false);
+      }
+    };
+    fetchRoles();
+  }, []);
 
   // Local state for editable fields
   const [localName, setLocalName] = useState(agent.name);
@@ -77,7 +97,7 @@ export const AgentDetails: React.FC<AgentDetailsProps> = ({ agent, onUpdate, onR
       queryKey: ['skillVersions', as.skillId],
       queryFn: () => orchestratorService.listSkillVersions(as.skillId),
       enabled: true,
-      staleTime: 1000 * 60 * 5, // 5 minutes
+      staleTime: 1000 * 60 * 5,
     })),
   });
 
@@ -120,10 +140,11 @@ export const AgentDetails: React.FC<AgentDetailsProps> = ({ agent, onUpdate, onR
     await handleUpdate({ name: localName });
   }, [localName, agent.name, handleUpdate]);
 
-  const handleRoleBlur = useCallback(async () => {
-    if (localRole === agent.role) return;
-    await handleUpdate({ role: localRole });
-  }, [localRole, agent.role, handleUpdate]);
+  const handleRoleChange = useCallback(async (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const newRole = e.target.value;
+    setLocalRole(newRole);
+    await handleUpdate({ role: newRole });
+  }, [handleUpdate]);
 
   const handleSoulBlur = useCallback(async () => {
     if (localSoulMd === agent.soulMd) return;
@@ -559,14 +580,22 @@ export const AgentDetails: React.FC<AgentDetailsProps> = ({ agent, onUpdate, onR
 
                 <div>
                   <label className="block text-[10px] font-black text-zinc-600 uppercase mb-2">Role</label>
-                  <input
-                    type="text"
-                    value={localRole}
-                    onChange={(e) => setLocalRole(e.target.value)}
-                    onBlur={handleRoleBlur}
-                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-200"
-                    placeholder="e.g. Chief of Staff, Worker"
-                  />
+                  {loadingRoles ? (
+                    <LoadingSpinner size="sm" />
+                  ) : (
+                    <select
+                      value={localRole}
+                      onChange={handleRoleChange}
+                      className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-200"
+                    >
+                      <option value="">Select a role</option>
+                      {availableRoles.map(r => (
+                        <option key={r.roleName} value={r.roleName}>
+                          {r.roleName.charAt(0).toUpperCase() + r.roleName.slice(1)}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                 </div>
 
                 <div>

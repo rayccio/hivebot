@@ -113,6 +113,7 @@ mkdir -p ./data
 mkdir -p ./data/artifacts
 mkdir -p ./secrets
 mkdir -p ./global_files
+mkdir -p ./layers
 
 # --- 4. Validate and repair master key (hex only, length 64) ---
 validate_master_key() {
