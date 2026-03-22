@@ -1,9 +1,10 @@
+# backend/tests/test_agent_role_dynamic.py
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
 from app.services.agent_manager import AgentManager
 from app.services.docker_service import DockerService
 from app.models.types import ReasoningConfig, ReportingTarget, AgentCreate
-from app.constants import INITIAL_SOUL, INITIAL_IDENTITY, INITIAL_TOOLS
+from app.constants import BUILDER_SOUL, BUILDER_IDENTITY, BUILDER_TOOLS
 
 @pytest.mark.asyncio
 async def test_get_role_prompts_from_db():
@@ -14,8 +15,8 @@ async def test_get_role_prompts_from_db():
     with patch('app.services.agent_manager.AsyncSessionLocal') as mock_session:
         mock_conn = AsyncMock()
         mock_session.return_value.__aenter__.return_value = mock_conn
-        mock_result = MagicMock()
-        mock_result.fetchone.return_value = ("soul", "identity", "tools")
+        mock_result = AsyncMock()
+        mock_result.fetchone = AsyncMock(return_value=("soul", "identity", "tools"))
         mock_conn.execute.return_value = mock_result
 
         soul, identity, tools = await manager._get_role_prompts_from_db("builder")
@@ -24,7 +25,7 @@ async def test_get_role_prompts_from_db():
         assert tools == "tools"
 
         # Fallback when not found
-        mock_result.fetchone.return_value = None
+        mock_result.fetchone = AsyncMock(return_value=None)
         soul, identity, tools = await manager._get_role_prompts_from_db("nonexistent")
         assert soul is None
         assert identity is None
@@ -38,10 +39,10 @@ async def test_get_prompts_for_role_async_fallback():
     with patch.object(manager, '_get_role_prompts_from_db', new_callable=AsyncMock) as mock_db:
         mock_db.return_value = (None, None, None)
         soul, identity, tools = await manager._get_prompts_for_role_async("builder")
-        # Should fall back to constants
-        assert soul == "soul.md content from constants"  # We can't check exact content, but we can check it's not None.
-        assert identity is not None
-        assert tools is not None
+        # Should fall back to constants – check they match expected
+        assert soul == BUILDER_SOUL
+        assert identity == BUILDER_IDENTITY
+        assert tools == BUILDER_TOOLS
 
 @pytest.mark.asyncio
 async def test_create_role_agent_uses_db():

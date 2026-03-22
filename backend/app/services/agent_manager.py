@@ -45,7 +45,7 @@ class AgentManager:
                 """),
                 {"role_name": role_name}
             )
-            row = result.fetchone()
+            row = await result.fetchone()  # <-- FIXED: added await
             if row:
                 return row[0], row[1], row[2]
         return None, None, None

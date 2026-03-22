@@ -1,3 +1,4 @@
+# backend/tests/test_agent_roles.py
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
 from app.services.agent_manager import AgentManager
@@ -5,7 +6,8 @@ from app.services.docker_service import DockerService
 from app.models.types import ReasoningConfig, ReportingTarget, AgentCreate
 from app.constants import (
     BUILDER_SOUL, BUILDER_IDENTITY, BUILDER_TOOLS,
-    TESTER_SOUL, TESTER_IDENTITY, TESTER_TOOLS
+    TESTER_SOUL, TESTER_IDENTITY, TESTER_TOOLS,
+    INITIAL_SOUL, INITIAL_IDENTITY, INITIAL_TOOLS
 )
 from app.services.skill_manager import SkillManager  # not used directly but needed for imports
 
@@ -25,7 +27,6 @@ async def test_get_prompts_for_role():
 
     # Fallback
     soul, identity, tools = manager._get_prompts_for_role("generic")
-    from app.constants import INITIAL_SOUL, INITIAL_IDENTITY, INITIAL_TOOLS
     assert soul == INITIAL_SOUL
     assert identity == INITIAL_IDENTITY
     assert tools == INITIAL_TOOLS
@@ -35,6 +36,7 @@ async def test_create_role_agent(session):
     docker = MagicMock(spec=DockerService)
     manager = AgentManager(docker)
     reasoning = ReasoningConfig(model="openai/gpt-4o", temperature=0.7)
+
     with patch('app.services.agent_manager.AsyncSessionLocal') as mock_session, \
          patch('app.services.agent_manager.redis_service.sadd', new_callable=AsyncMock) as mock_sadd, \
          patch('builtins.open', new_callable=MagicMock) as mock_open, \
@@ -42,6 +44,11 @@ async def test_create_role_agent(session):
 
         mock_conn = AsyncMock()
         mock_session.return_value.__aenter__.return_value = mock_conn
+
+        # Mock the database result for _get_role_prompts_from_db
+        mock_result = AsyncMock()
+        mock_result.fetchone = AsyncMock(return_value=None)  # return None so fallback to constants
+        mock_conn.execute.return_value = mock_result
 
         # Mock the repository create method
         mock_repo_instance = AsyncMock()

@@ -1,3 +1,4 @@
+# backend/tests/test_hive_manager.py
 import pytest
 from unittest.mock import MagicMock, patch, AsyncMock
 from app.services.hive_manager import HiveManager
@@ -12,10 +13,7 @@ async def test_create_hive_persists_agent_ids(session):
     # Create a temporary directory for agent data to avoid cluttering real data
     with tempfile.TemporaryDirectory() as tmpdir:
         # Patch settings.AGENTS_DIR to point to a temporary directory
-        original_agents_dir = settings.AGENTS_DIR
-        settings.AGENTS_DIR = tmpdir
-
-        try:
+        with patch.object(settings, 'AGENTS_DIR', tmpdir):
             # Mock DockerService to prevent container creation
             docker = MagicMock(spec=DockerService)
             agent_manager = AgentManager(docker)
@@ -38,17 +36,12 @@ async def test_create_hive_persists_agent_ids(session):
             data = row[0]
             assert "agentIds" in data
             assert data["agentIds"] == []
-        finally:
-            settings.AGENTS_DIR = original_agents_dir
 
 
 @pytest.mark.asyncio
 async def test_add_agent_updates_agent_ids(session):
     with tempfile.TemporaryDirectory() as tmpdir:
-        original_agents_dir = settings.AGENTS_DIR
-        settings.AGENTS_DIR = tmpdir
-
-        try:
+        with patch.object(settings, 'AGENTS_DIR', tmpdir):
             # Mock DockerService to avoid container creation
             docker = MagicMock(spec=DockerService)
             agent_manager = AgentManager(docker)
@@ -62,7 +55,7 @@ async def test_add_agent_updates_agent_ids(session):
             reasoning = ReasoningConfig(model="openai/gpt-4o", temperature=0.7)
             agent_in = AgentCreate(
                 name="Test Agent",
-                role="generic",  # changed from AgentRole.GENERIC
+                role="generic",
                 soulMd="soul",
                 identityMd="identity",
                 toolsMd="tools",
@@ -92,5 +85,3 @@ async def test_add_agent_updates_agent_ids(session):
             row = result.fetchone()
             data = row[0]
             assert agent.id in data["agentIds"]
-        finally:
-            settings.AGENTS_DIR = original_agents_dir
