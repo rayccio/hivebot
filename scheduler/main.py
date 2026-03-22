@@ -213,7 +213,9 @@ async def assign_task(pg_pool, redis_client, task, agent_id):
         'description': task['description'],
         'input_data': task.get('input_data', {}),
         'goal_id': task['goal_id'],
-        'hive_id': task.get('hive_id')
+        'hive_id': task.get('hive_id'),
+        'loop_handler': task.get('loop_handler'),   # NEW
+        'project_id': task.get('project_id')        # NEW
     }
     await redis_client.publish(f"agent:{agent_id}", json.dumps(message))
     logger.info(f"Assigned task {task['id']} to agent {agent_id}")

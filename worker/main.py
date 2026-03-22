@@ -47,6 +47,8 @@ AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=F
 from skill_executor import SkillExecutor
 skill_executor = SkillExecutor(simulator_url=SIMULATOR_URL)
 
+from loop_handler import registry as loop_handler_registry, BaseLoopHandler
+
 # ==================== HELPER FUNCTIONS ====================
 
 async def get_agent_from_db(agent_id: str):
@@ -188,129 +190,6 @@ async def log_execution(goal_id: str, level: str, message: str, task_id: Optiona
     except Exception as e:
         logger.warning(f"Failed to send execution log: {e}")
 
-# ==================== JSON EXTRACTION HELPER ====================
-
-def extract_json(text: str) -> Optional[dict]:
-    """Extract JSON from text, handling markdown code blocks and malformed responses."""
-    # Try to find a JSON block in triple backticks
-    code_block_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', text, re.DOTALL)
-    if code_block_match:
-        try:
-            return json.loads(code_block_match.group(1))
-        except:
-            pass
-
-    # Try to find any JSON object in the text
-    json_match = re.search(r'\{.*?\}', text, re.DOTALL)
-    if json_match:
-        try:
-            return json.loads(json_match.group())
-        except:
-            pass
-
-    return None
-
-# ==================== LOOP IMPLEMENTATION ====================
-
-MAX_ITERATIONS = 5
-
-async def execute_task_with_loop(agent_id, task_id, description, input_data, goal_id, hive_id, agent_data, allowed_skills):
-    reasoning_config = agent_data.get("reasoning", {})
-
-    async def call_with_role(role_prompt, user_prompt):
-        return await call_ai_delta(
-            agent_id,
-            user_prompt,
-            reasoning_config,
-            system_prompt_override=role_prompt,
-            retries=1
-        )
-
-    def make_system_prompt(soul, identity, tools):
-        return f"""You are an AI agent with the following STRICT IDENTITY. You must follow this identity exactly.
-
-IDENTITY:
-{identity}
-
-SOUL:
-{soul}
-
-TOOLS:
-{tools}
-
-IMPORTANT: You are NOT a generic AI assistant. You are the entity described above. Always respond in character.
-"""
-
-    builder_prompt = make_system_prompt(constants.BUILDER_SOUL, constants.BUILDER_IDENTITY, constants.BUILDER_TOOLS)
-    tester_prompt = make_system_prompt(constants.TESTER_SOUL, constants.TESTER_IDENTITY, constants.TESTER_TOOLS)
-    reviewer_prompt = make_system_prompt(constants.REVIEWER_SOUL, constants.REVIEWER_IDENTITY, constants.REVIEWER_TOOLS)
-    fixer_prompt = make_system_prompt(constants.FIXER_SOUL, constants.FIXER_IDENTITY, constants.FIXER_TOOLS)
-
-    current_code = None
-    for iteration in range(1, MAX_ITERATIONS + 1):
-        asyncio.create_task(log_execution(goal_id, "info", f"Starting iteration {iteration}", task_id, agent_id, iteration))
-        logger.info(f"Agent {agent_id} – Iteration {iteration} for task {task_id}")
-
-        builder_input = f"""Task: {description}
-Additional input: {json.dumps(input_data, indent=2)}
-Previous code (if any): {current_code or 'None'}
-Generate the code for this task. Output only the code, no explanations."""
-        code = await call_with_role(builder_prompt, builder_input)
-        asyncio.create_task(log_execution(goal_id, "debug", f"Generated code for iteration {iteration}", task_id, agent_id, iteration))
-        file_path = f"task_{task_id}/iteration_{iteration}/code.py"
-        await save_artifact(hive_id, goal_id, task_id, file_path, code.encode(), status="draft")
-        current_code = code
-
-        tester_input = f"""Task: {description}
-Code to test:
-{code}
-Write and run tests for this code. Output the test results **in JSON format only** with keys "passed" (bool) and "errors" (list of strings). Do not include any other text.
-Example: {{"passed": true, "errors": []}}"""
-        test_result_text = await call_with_role(tester_prompt, tester_input)
-        logger.debug(f"Raw test result from AI: {test_result_text[:200]}")
-
-        # Parse test result
-        test_result = extract_json(test_result_text)
-        if test_result is None:
-            logger.error(f"Failed to parse test result: {test_result_text}")
-            test_result = {"passed": False, "errors": ["Failed to parse test output"]}
-
-        await save_artifact(hive_id, goal_id, task_id, f"task_{task_id}/iteration_{iteration}/test_result.json", json.dumps(test_result).encode(), status="tested")
-
-        if test_result.get("passed"):
-            asyncio.create_task(log_execution(goal_id, "info", f"Task passed on iteration {iteration}", task_id, agent_id, iteration))
-            logger.info(f"Task {task_id} passed on iteration {iteration}")
-            await save_artifact(hive_id, goal_id, task_id, f"task_{task_id}/final_code.py", current_code.encode(), status="final")
-            asyncio.create_task(log_execution(goal_id, "info", f"Task {task_id} completed successfully after {iteration} iterations", task_id, agent_id, iteration))
-            return True, iteration
-        else:
-            asyncio.create_task(log_execution(goal_id, "warning", f"Tests failed on iteration {iteration}: {test_result.get('errors', [])}", task_id, agent_id, iteration))
-
-        reviewer_input = f"""Task: {description}
-Code:
-{code}
-Test errors:
-{json.dumps(test_result.get('errors', []), indent=2)}
-List the issues in the code that caused the test failures. Provide a list of actionable fixes."""
-        issues = await call_with_role(reviewer_prompt, reviewer_input)
-        await save_artifact(hive_id, goal_id, task_id, f"task_{task_id}/iteration_{iteration}/issues.txt", issues.encode(), status="reviewed")
-        asyncio.create_task(log_execution(goal_id, "info", f"Review completed, issues identified", task_id, agent_id, iteration))
-
-        fixer_input = f"""Task: {description}
-Code:
-{code}
-Issues:
-{issues}
-Provide the fixed code. Output only the corrected code, no explanations."""
-        fixed_code = await call_with_role(fixer_prompt, fixer_input)
-        current_code = fixed_code
-        await save_artifact(hive_id, goal_id, task_id, f"task_{task_id}/iteration_{iteration}/fixed_code.py", fixed_code.encode(), status="fixed")
-        asyncio.create_task(log_execution(goal_id, "debug", f"Fixed code applied for iteration {iteration}", task_id, agent_id, iteration))
-
-    asyncio.create_task(log_execution(goal_id, "error", f"Task {task_id} failed after {MAX_ITERATIONS} iterations", task_id, agent_id))
-    logger.warning(f"Task {task_id} failed after {MAX_ITERATIONS} iterations")
-    return False, MAX_ITERATIONS
-
 # ==================== COMMAND PROCESSING ====================
 
 async def process_think_command(agent_id, user_input, model_config, simulation=False):
@@ -430,9 +309,46 @@ async def process_task_assign(agent_id, task_id, description, input_data, goal_i
 
         asyncio.create_task(log_execution(goal_id, "info", f"Task {task_id} assigned to agent {agent_id}", task_id, agent_id))
 
-        success, iterations = await execute_task_with_loop(
-            agent_id, task_id, description, input_data, goal_id, hive_id, agent_data, allowed_skills
+        # Fetch full task data from DB to get loop_handler and project_id
+        async with AsyncSessionLocal() as session:
+            result = await session.execute(
+                text("SELECT data FROM tasks WHERE id = :id"),
+                {"id": task_id}
+            )
+            row = result.fetchone()
+            if not row:
+                logger.error(f"Task {task_id} not found in DB")
+                return
+            task_data = row[0]
+            if isinstance(task_data, str):
+                task_data = json.loads(task_data)
+            loop_handler_name = task_data.get("loop_handler", "default")
+            project_id = task_data.get("project_id")
+
+        # Get loop handler class
+        handler_class = loop_handler_registry.get(loop_handler_name)
+        if not handler_class:
+            logger.warning(f"Loop handler '{loop_handler_name}' not found, using default")
+            handler_class = loop_handler_registry.default()
+        if not handler_class:
+            raise Exception("No default loop handler available")
+
+        handler = handler_class()
+        loop_result = await handler.run(
+            agent_id=agent_id,
+            task_id=task_id,
+            description=description,
+            input_data=input_data,
+            goal_id=goal_id,
+            hive_id=hive_id,
+            project_id=project_id,
+            skill_executor=skill_executor,
+            call_ai_delta=call_ai_delta,
+            save_artifact=save_artifact
         )
+
+        success = loop_result.get("success", False)
+        iterations = loop_result.get("iterations", 0)
 
         agent_data["memory"]["shortTerm"].append(f"Task {task_id} {'succeeded' if success else 'failed'} after {iterations} iterations.")
         if len(agent_data["memory"]["shortTerm"]) > 10:
@@ -450,8 +366,8 @@ async def process_task_assign(agent_id, task_id, description, input_data, goal_i
             "iterations": iterations,
             "task_id": task_id,
             "goal_id": goal_id,
-            "final_artifact": f"task_{task_id}/final_code.py",
-            "message": f"Task completed with status: {'success' if success else 'failure'}"
+            "final_artifact": loop_result.get("output", {}).get("final_artifact"),
+            "message": loop_result.get("output", {}).get("message", "Task completed")
         }
 
         result = {
@@ -521,6 +437,11 @@ async def worker_loop():
 
 async def main():
     logger.info("Starting HiveBot worker...")
+
+    # Load loop handler registry
+    async with AsyncSessionLocal() as session:
+        await loop_handler_registry.load_from_db(session)
+
     try:
         await worker_loop()
     except Exception as e:

@@ -8,6 +8,7 @@ from ....services.planner import Planner
 from ....services.hive_manager import HiveManager
 from ....services.agent_manager import AgentManager
 from ....services.docker_service import DockerService
+from ....services.project_manager import ProjectManager
 from ....core.database import get_db
 from ....models.types import HiveGoal, HiveTask, HiveGoalStatus
 from pydantic import BaseModel
@@ -36,13 +37,17 @@ async def get_hive_manager():
     agent_manager = AgentManager(docker)
     return HiveManager(agent_manager)
 
+async def get_project_manager():
+    return ProjectManager()
+
 @router.post("", response_model=GoalResponse)
 async def create_goal(
     hive_id: str,
     request: GoalCreateRequest,
     goal_engine: GoalEngine = Depends(get_goal_engine),
     planner: Planner = Depends(get_planner),
-    hive_manager: HiveManager = Depends(get_hive_manager)
+    hive_manager: HiveManager = Depends(get_hive_manager),
+    project_manager: ProjectManager = Depends(get_project_manager)
 ):
     hive = await hive_manager.get_hive(hive_id)
     if not hive:
@@ -53,6 +58,15 @@ async def create_goal(
         description=request.description,
         constraints=request.constraints,
         success_criteria=request.success_criteria
+    )
+
+    # Create a project for this goal
+    project = await project_manager.create_project(
+        hive_id=hive_id,
+        name=f"Project for goal {goal.id}",
+        description=goal.description,
+        goal=goal.description,
+        root_goal_id=goal.id
     )
 
     from ....services.skill_manager import SkillManager
@@ -66,7 +80,8 @@ async def create_goal(
             hive_id=hive_id,
             goal_text=request.description,
             hive_context=hive.global_user_md,
-            skills=skills_list
+            skills=skills_list,
+            project_id=project.id   # <-- pass project_id
         )
     except Exception as e:
         logger.error(f"Planning failed for goal {goal.id}: {e}")
@@ -109,7 +124,7 @@ async def get_goal_tasks(
         text("SELECT data FROM tasks WHERE data->>'goal_id' = :goal_id"),
         {"goal_id": goal_id}
     )
-    rows = await result.fetchall()
+    rows = result.fetchall()
     return [HiveTask.model_validate(r[0]) for r in rows]
 
 @router.post("/{goal_id}/cancel", response_model=HiveGoal)

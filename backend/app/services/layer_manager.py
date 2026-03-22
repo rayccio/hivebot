@@ -104,7 +104,7 @@ class LayerManager:
                     text("SELECT id FROM skills WHERE data->>'name' = :name"),
                     {"name": skill_name}
                 )
-                row = await result.fetchone()
+                row = result.fetchone()
                 if row:
                     skill_id = row[0]
                 else:
@@ -131,25 +131,10 @@ class LayerManager:
                     {"layer_id": layer_id, "skill_id": skill_id}
                 )
 
-            # Insert planner templates
-            templates = manifest.get("planner_templates", [])
-            for template in templates:
-                template_id = f"pt-{uuid.uuid4().hex[:8]}"
-                await session.execute(
-                    text("""
-                        INSERT INTO planner_templates (id, layer_id, goal_pattern, template, priority)
-                        VALUES (:id, :layer_id, :goal_pattern, :template, :priority)
-                    """),
-                    {
-                        "id": template_id,
-                        "layer_id": layer_id,
-                        "goal_pattern": template.get("goal_pattern"),
-                        "template": template.get("template"),
-                        "priority": template.get("priority", 0)
-                    }
-                )
+            # Insert planner templates (including custom planners)
+            await self._register_custom_planner(session, layer_id, layer_dir, manifest)
 
-            # Register loop handler if exists
+            # Insert loop handler if exists
             loop_file = layer_dir / "loop.py"
             if loop_file.exists():
                 loop_handler_id = f"lh-{uuid.uuid4().hex[:8]}"
@@ -188,25 +173,62 @@ class LayerManager:
         logger.info(f"Layer {layer_id} installed from {git_url}")
         return layer_id
 
+    async def _register_custom_planner(self, session, layer_id: str, layer_dir: Path, manifest: dict):
+        """Register a custom planner if present."""
+        planner_info = manifest.get("planner")
+        if not planner_info:
+            return
+        class_path = planner_info.get("class")
+        goal_pattern = planner_info.get("goal_pattern")
+        priority = planner_info.get("priority", 0)
+        if not class_path:
+            return
+
+        # Build full class path (e.g., layers.coding.planner.CodingPlanner)
+        # The layer_dir name is the layer name (from git repo). We need to know the package name.
+        # The layer is installed under /app/layers/<layer_name>. So the Python module path
+        # should be "layers.<layer_name>.planner.CodingPlanner".
+        layer_name = layer_dir.name
+        full_class_path = f"layers.{layer_name}.{class_path}"
+        template_text = planner_info.get("template")  # optional few-shot example
+
+        # Insert a planner template
+        template_id = f"pt-{uuid.uuid4().hex[:8]}"
+        await session.execute(
+            text("""
+                INSERT INTO planner_templates (id, layer_id, goal_pattern, template, custom_planner_class, priority)
+                VALUES (:id, :layer_id, :goal_pattern, :template, :custom_planner_class, :priority)
+            """),
+            {
+                "id": template_id,
+                "layer_id": layer_id,
+                "goal_pattern": goal_pattern,
+                "template": template_text,
+                "custom_planner_class": full_class_path,
+                "priority": priority
+            }
+        )
+        logger.info(f"Registered custom planner for layer {layer_id}: {full_class_path}")
+
     async def enable_layer(self, layer_id: str) -> bool:
         """Enable a layer (set enabled=True). Also check dependencies."""
         async with AsyncSessionLocal() as session:
             # Check if layer exists
-            result = await session.execute(
+            row = await session.execute(
                 text("SELECT dependencies FROM layers WHERE id = :id"),
                 {"id": layer_id}
             )
-            row = await result.fetchone()
-            if not row:
+            result = row.fetchone()
+            if not result:
                 return False
-            deps = row[0] or []
+            deps = result[0] or []
             # Ensure all dependencies are installed and enabled
             for dep in deps:
                 dep_row = await session.execute(
                     text("SELECT enabled FROM layers WHERE name = :name"),
                     {"name": dep}
                 )
-                dep_enabled = await dep_row.scalar()
+                dep_enabled = dep_row.scalar()
                 if not dep_enabled:
                     raise Exception(f"Dependency layer {dep} is not enabled")
             # Enable the layer
@@ -233,11 +255,11 @@ class LayerManager:
         now = datetime.utcnow()
         async with AsyncSessionLocal() as session:
             # Check if config already exists for this (layer, hive)
-            result = await session.execute(
+            row = await session.execute(
                 text("SELECT id FROM layer_configs WHERE layer_id = :layer_id AND hive_id = :hive_id"),
                 {"layer_id": layer_id, "hive_id": hive_id}
             )
-            existing = await result.fetchone()
+            existing = row.fetchone()
             if existing:
                 # Update existing
                 await session.execute(
@@ -266,24 +288,24 @@ class LayerManager:
     async def get_layer_config(self, layer_id: str, hive_id: str) -> Optional[Dict[str, Any]]:
         """Retrieve configuration for a layer in a hive."""
         async with AsyncSessionLocal() as session:
-            result = await session.execute(
+            row = await session.execute(
                 text("SELECT config_data FROM layer_configs WHERE layer_id = :layer_id AND hive_id = :hive_id"),
                 {"layer_id": layer_id, "hive_id": hive_id}
             )
-            row = await result.fetchone()
-            if row:
-                return json.loads(row[0])
+            result = row.fetchone()
+            if result:
+                return json.loads(result[0])
         return None
 
     async def get_layer_config_schema(self, layer_id: str) -> Optional[Dict[str, Any]]:
         """Return the config schema from the layer's settings.json."""
         # We need to know the layer's name to find its directory.
         async with AsyncSessionLocal() as session:
-            result = await session.execute(
+            row = await session.execute(
                 text("SELECT name FROM layers WHERE id = :id"),
                 {"id": layer_id}
             )
-            layer_name = await result.scalar()
+            layer_name = row.scalar()
             if not layer_name:
                 return None
         layer_dir = self.LAYERS_DIR / layer_name
@@ -300,5 +322,4 @@ class LayerManager:
                 text("SELECT id, name, class_path FROM loop_handlers WHERE layer_id = :layer_id"),
                 {"layer_id": layer_id}
             )
-            rows_list = await rows.fetchall()
-            return [{"id": r[0], "name": r[1], "class_path": r[2]} for r in rows_list]
+            return [{"id": r[0], "name": r[1], "class_path": r[2]} for r in rows.fetchall()]

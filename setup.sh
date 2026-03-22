@@ -113,7 +113,7 @@ mkdir -p ./data
 mkdir -p ./data/artifacts
 mkdir -p ./secrets
 mkdir -p ./global_files
-mkdir -p ./layers        # <-- Phase 2: layer storage directory
+mkdir -p ./layers        # Phase 2: layer storage directory
 
 # --- 4. Validate and repair master key (hex only, length 64) ---
 validate_master_key() {
@@ -397,6 +397,10 @@ docker exec hivebot_backend python /app/scripts/create_layer_tables.py || echo -
 docker exec hivebot_backend python /app/scripts/seed_core_layer.py || echo -e "${RED}❌ Core layer seeding failed, but continuing...${NC}"
 docker exec hivebot_backend python /app/scripts/update_tasks_artifacts.py || echo -e "${RED}❌ Task/artifact update failed, but continuing...${NC}"
 
+# Phase 3 migration: add custom_planner_class column
+echo -e "${YELLOW}🔄 Adding custom_planner_class to planner_templates...${NC}"
+docker exec hivebot_backend python /app/scripts/add_custom_planner_class.py || echo -e "${RED}❌ Adding custom_planner_class failed, but continuing...${NC}"
+
 # Existing migrations
 echo -e "${YELLOW}🔄 Migrating hives to include agentIds...${NC}"
 docker exec hivebot_backend python /app/scripts/migrate_hives_add_agent_ids.py || echo -e "${RED}❌ Hive migration failed, but continuing...${NC}"
@@ -414,9 +418,9 @@ else
 fi
 
 # --- 14. Final status ---
-#clear
+clear
 show_small_banner
-echo -e "${GREEN}✅ HiveBot Phase 2 complete!${NC}"
+echo -e "${GREEN}✅ HiveBot Phase 3 complete!${NC}"
 echo -e "   Frontend: http://${URL_IP}:8080"
 echo -e "   Backend API: http://${URL_IP}:8000"
 echo -e "   Secrets: $(pwd)/secrets"

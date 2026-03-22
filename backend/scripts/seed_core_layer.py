@@ -115,7 +115,7 @@ async def migrate():
             INSERT INTO loop_handlers (id, layer_id, name, class_path)
             VALUES ($1, $2, $3, $4)
             ON CONFLICT (id) DO NOTHING
-        """, loop_id, core_layer_id, "default", "core.loops.DefaultLoop")
+        """, loop_id, core_layer_id, "default", "worker.loop_handler.DefaultLoopHandler")
         print("Default loop handler registered.")
 
     finally:
