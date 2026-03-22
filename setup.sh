@@ -113,7 +113,7 @@ mkdir -p ./data
 mkdir -p ./data/artifacts
 mkdir -p ./secrets
 mkdir -p ./global_files
-mkdir -p ./layers
+mkdir -p ./layers        # <-- Phase 2: layer storage directory
 
 # --- 4. Validate and repair master key (hex only, length 64) ---
 validate_master_key() {
@@ -391,7 +391,7 @@ docker exec hivebot_backend python /app/scripts/create_economy_tables.py || echo
 docker exec hivebot_backend python /app/scripts/create_execution_logs_table.py || echo -e "${RED}❌ Execution logs migration failed, but continuing...${NC}"
 docker exec hivebot_backend python /app/scripts/seed_eval_tasks.py || echo -e "${RED}❌ Seeding failed, but continuing...${NC}"
 
-# NEW: Phase 0 migration scripts
+# Phase 0 migration scripts
 echo -e "${YELLOW}🔄 Running Phase 0 migrations...${NC}"
 docker exec hivebot_backend python /app/scripts/create_layer_tables.py || echo -e "${RED}❌ Layer tables creation failed, but continuing...${NC}"
 docker exec hivebot_backend python /app/scripts/seed_core_layer.py || echo -e "${RED}❌ Core layer seeding failed, but continuing...${NC}"
@@ -403,12 +403,24 @@ docker exec hivebot_backend python /app/scripts/migrate_hives_add_agent_ids.py |
 echo -e "${YELLOW}🔄 Converting JSON columns to JSONB...${NC}"
 docker exec hivebot_backend python /app/scripts/convert_json_to_jsonb.py || echo -e "${RED}❌ JSONB conversion failed, but continuing...${NC}"
 
-# --- 13. Final status ---
-clear
+# --- 13. Install CLI wrapper (Phase 2) ---
+echo -e "${YELLOW}🛠️ Installing HiveBot CLI...${NC}"
+if [ -f ./hivebot ]; then
+    cp ./hivebot /usr/local/bin/hivebot
+    chmod +x /usr/local/bin/hivebot
+    echo -e "${GREEN}   ✅ CLI installed as 'hivebot'${NC}"
+else
+    echo -e "${YELLOW}   ⚠️  hivebot wrapper not found, skipping install${NC}"
+fi
+
+# --- 14. Final status ---
+#clear
 show_small_banner
-echo -e "${GREEN}✅ HiveBot Phase 0 complete!${NC}"
+echo -e "${GREEN}✅ HiveBot Phase 2 complete!${NC}"
 echo -e "   Frontend: http://${URL_IP}:8080"
 echo -e "   Backend API: http://${URL_IP}:8000"
 echo -e "   Secrets: $(pwd)/secrets"
 echo -e "   Bridges env: $(pwd)/bridges.env"
+echo -e "   Layers directory: $(pwd)/layers"
+echo -e "   CLI: hivebot [install|enable|disable|list|...]"
 echo -e "${YELLOW}📘 Ensure ports 8080 and 8000 are open in your firewall.${NC}"

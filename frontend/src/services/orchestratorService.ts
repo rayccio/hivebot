@@ -815,6 +815,91 @@ class OrchestratorService {
     if (!res.ok) throw new Error('Failed to delete suggestion');
   }
 
+  // ==================== LAYER ENDPOINTS ====================
+
+  async listLayers(): Promise<any[]> {
+    const res = await fetch(`${this.baseUrl}/layers`, {
+      headers: this._authHeaders(),
+    });
+    if (!res.ok) throw new Error('Failed to fetch layers');
+    return res.json();
+  }
+
+  async listLayerRoles(layerId: string): Promise<{ roleName: string; roleType: string }[]> {
+    const res = await fetch(`${this.baseUrl}/layers/${layerId}/roles`, {
+      headers: this._authHeaders(),
+    });
+    if (!res.ok) throw new Error('Failed to fetch layer roles');
+    return res.json();
+  }
+
+  async listLayerSkills(layerId: string): Promise<any[]> {
+    const res = await fetch(`${this.baseUrl}/layers/${layerId}/skills`, {
+      headers: this._authHeaders(),
+    });
+    if (!res.ok) throw new Error('Failed to fetch layer skills');
+    return res.json();
+  }
+
+  async installLayer(gitUrl: string, version?: string): Promise<any> {
+    const res = await fetch(`${this.baseUrl}/layers/install`, {
+      method: 'POST',
+      headers: this._authHeaders(),
+      body: JSON.stringify({ git_url: gitUrl, version }),
+    });
+    if (!res.ok) throw new Error('Failed to install layer');
+    return res.json();
+  }
+
+  async enableLayer(layerId: string): Promise<void> {
+    const res = await fetch(`${this.baseUrl}/layers/${layerId}/enable`, {
+      method: 'PATCH',
+      headers: this._authHeaders(),
+    });
+    if (!res.ok) throw new Error('Failed to enable layer');
+  }
+
+  async disableLayer(layerId: string): Promise<void> {
+    const res = await fetch(`${this.baseUrl}/layers/${layerId}/disable`, {
+      method: 'PATCH',
+      headers: this._authHeaders(),
+    });
+    if (!res.ok) throw new Error('Failed to disable layer');
+  }
+
+  async getLayerConfig(layerId: string, hiveId: string): Promise<any> {
+    const res = await fetch(`${this.baseUrl}/layers/${layerId}/config?hive_id=${hiveId}`, {
+      headers: this._authHeaders(),
+    });
+    if (!res.ok) throw new Error('Failed to get layer config');
+    return res.json();
+  }
+
+  async updateLayerConfig(layerId: string, hiveId: string, config: any): Promise<void> {
+    const res = await fetch(`${this.baseUrl}/layers/${layerId}/config?hive_id=${hiveId}`, {
+      method: 'PUT',
+      headers: this._authHeaders(),
+      body: JSON.stringify({ config }),
+    });
+    if (!res.ok) throw new Error('Failed to update layer config');
+  }
+
+  async getLayerConfigSchema(layerId: string): Promise<any> {
+    const res = await fetch(`${this.baseUrl}/layers/${layerId}/config-schema`, {
+      headers: this._authHeaders(),
+    });
+    if (!res.ok) throw new Error('Failed to get layer config schema');
+    return res.json();
+  }
+
+  async listLayerLoopHandlers(layerId: string): Promise<any[]> {
+    const res = await fetch(`${this.baseUrl}/layers/${layerId}/loop-handlers`, {
+      headers: this._authHeaders(),
+    });
+    if (!res.ok) throw new Error('Failed to list loop handlers');
+    return res.json();
+  }
+
   // ==================== META ENDPOINTS ====================
 
   async getMetaStatus(): Promise<any> {

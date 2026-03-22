@@ -92,6 +92,7 @@ services:
       - ./data:/app/data
       - ./logs/backend:/app/logs
       - ./.env:/app/.env
+      - ./layers:/app/layers
     networks:
       - hivebot_network
     ports:
