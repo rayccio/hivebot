@@ -24,14 +24,14 @@ class UserRepository:
         result = await self.db.execute(
             select(UserModel).where(UserModel.id == user_id)
         )
-        db_user = await result.scalar_one_or_none()
+        db_user = result.scalar_one_or_none()   # removed await
         if db_user:
             return UserAccount(**db_user.data)
         return None
 
     async def get_by_username(self, username: str) -> UserAccount | None:
         result = await self.db.execute(select(UserModel))
-        db_users = await result.scalars().all()
+        db_users = result.scalars().all()
         for u in db_users:
             user = UserAccount(**u.data)
             if user.username == username:
@@ -40,7 +40,7 @@ class UserRepository:
 
     async def get_all(self) -> list[UserAccount]:
         result = await self.db.execute(select(UserModel))
-        db_users = await result.scalars().all()
+        db_users = result.scalars().all()
         return [UserAccount(**u.data) for u in db_users]
 
     async def update(self, user_id: str, updates: dict) -> UserAccount | None:

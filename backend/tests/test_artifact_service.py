@@ -55,9 +55,10 @@ async def test_get_artifact():
     with patch('app.services.artifact_service.AsyncSessionLocal') as mock_session:
         mock_conn = AsyncMock()
         mock_session.return_value.__aenter__.return_value = mock_conn
-        mock_result = MagicMock()
-        # Return a dict, not a JSON string
-        mock_result.fetchone.return_value = (mock_data,)
+
+        # Use AsyncMock for the result object
+        mock_result = AsyncMock()
+        mock_result.fetchone = AsyncMock(return_value=(mock_data,))
         mock_conn.execute.return_value = mock_result
 
         artifact = await service.get_artifact("art-123")
@@ -80,8 +81,10 @@ async def test_list_artifacts():
     with patch('app.services.artifact_service.AsyncSessionLocal') as mock_session:
         mock_conn = AsyncMock()
         mock_session.return_value.__aenter__.return_value = mock_conn
-        mock_result = MagicMock()
-        mock_result.fetchall.return_value = [(mock_data[0],)]  # dict, not string
+
+        # Use AsyncMock for the result object
+        mock_result = AsyncMock()
+        mock_result.fetchall = AsyncMock(return_value=[(mock_data[0],)])
         mock_conn.execute.return_value = mock_result
 
         artifacts = await service.list_artifacts("g-test")

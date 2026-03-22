@@ -37,8 +37,10 @@ async def test_get_account():
     with patch('app.services.economy_engine.AsyncSessionLocal') as mock_session:
         mock_conn = AsyncMock()
         mock_session.return_value.__aenter__.return_value = mock_conn
-        mock_result = MagicMock()
-        mock_result.fetchone.return_value = (json.dumps(mock_data),)
+
+        # Use AsyncMock for the result object
+        mock_result = AsyncMock()
+        mock_result.fetchone = AsyncMock(return_value=(json.dumps(mock_data),))
         mock_conn.execute.return_value = mock_result
 
         account = await engine.get_account("acc-123")

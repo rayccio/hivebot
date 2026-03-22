@@ -44,8 +44,10 @@ async def test_get_goal():
     with patch('app.services.goal_engine.AsyncSessionLocal') as mock_session:
         mock_conn = AsyncMock()
         mock_session.return_value.__aenter__.return_value = mock_conn
-        mock_result = MagicMock()
-        mock_result.fetchone.return_value = (mock_goal_data,)  # dict, not string
+
+        # Use AsyncMock for the result object
+        mock_result = AsyncMock()
+        mock_result.fetchone = AsyncMock(return_value=(mock_goal_data,))
         mock_conn.execute.return_value = mock_result
 
         goal = await engine.get_goal("g-123")

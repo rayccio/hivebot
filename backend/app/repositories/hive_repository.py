@@ -26,14 +26,14 @@ class HiveRepository:
         result = await self.db.execute(
             select(HiveModel).where(HiveModel.id == hive_id)
         )
-        db_hive = await result.scalar_one_or_none()
+        db_hive = result.scalar_one_or_none()   # removed await
         if db_hive:
             return Hive(**db_hive.data)
         return None
 
     async def get_all(self) -> list[Hive]:
         result = await self.db.execute(select(HiveModel))
-        db_hives = await result.scalars().all()
+        db_hives = result.scalars().all()
         return [Hive(**h.data) for h in db_hives]
 
     async def update(self, hive_id: str, updates: dict) -> Hive | None:

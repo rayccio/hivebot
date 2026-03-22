@@ -26,14 +26,14 @@ class AgentRepository:
         result = await self.db.execute(
             select(AgentModel).where(AgentModel.id == agent_id)
         )
-        db_agent = await result.scalar_one_or_none()
+        db_agent = result.scalar_one_or_none()   # removed await
         if db_agent:
             return Agent(**db_agent.data)
         return None
 
     async def get_all(self) -> list[Agent]:
         result = await self.db.execute(select(AgentModel))
-        db_agents = await result.scalars().all()
+        db_agents = result.scalars().all()
         return [Agent(**a.data) for a in db_agents]
 
     async def update(self, agent_id: str, updates: dict) -> Agent | None:
