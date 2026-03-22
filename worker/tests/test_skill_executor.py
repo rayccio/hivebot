@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
-from worker.skill_executor import SkillExecutor
+from skill_executor import SkillExecutor
 
 @pytest.mark.asyncio
 async def test_skill_executor_permission_check():
