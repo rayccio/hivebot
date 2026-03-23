@@ -45,9 +45,9 @@ async def test_get_goal():
         mock_conn = AsyncMock()
         mock_session.return_value.__aenter__.return_value = mock_conn
 
-        # Use AsyncMock for the result object
-        mock_result = AsyncMock()
-        mock_result.fetchone = AsyncMock(return_value=(mock_goal_data,))
+        # Use MagicMock for fetchone (not AsyncMock)
+        mock_result = MagicMock()
+        mock_result.fetchone.return_value = (mock_goal_data,)
         mock_conn.execute.return_value = mock_result
 
         goal = await engine.get_goal("g-123")

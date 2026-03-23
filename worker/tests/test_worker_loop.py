@@ -150,24 +150,28 @@ async def test_process_task_assign_integration():
         "skills": [{"skillId": "run_code", "enabled": True}]
     }
 
+    # Mock call_ai_delta to simulate the loop handler calls
+    async def mock_call_ai_delta(agent_id, user_input, model_config, system_prompt_override=None, retries=1):
+        if "Generate the code" in user_input:
+            return "def test_func(): return True"
+        elif "Write and run tests" in user_input:
+            return '{"passed": true, "errors": []}'
+        else:
+            return ""
+
     with patch('worker.main.get_agent_from_db', new_callable=AsyncMock) as mock_get, \
          patch('worker.main.update_agent_state', new_callable=AsyncMock) as mock_update, \
          patch('worker.main.loop_handler_registry.get') as mock_registry_get, \
          patch('worker.main.loop_handler_registry.default') as mock_registry_default, \
          patch('worker.main.register_agent_idle', new_callable=AsyncMock) as mock_register, \
          patch('worker.main.redis.from_url', new_callable=AsyncMock) as mock_redis, \
-         patch('worker.main.log_execution', new_callable=AsyncMock) as mock_log:
+         patch('worker.main.log_execution', new_callable=AsyncMock) as mock_log, \
+         patch('worker.main.call_ai_delta', new_callable=AsyncMock) as mock_call_ai_delta_patch:
 
         mock_get.return_value = agent_data
+        mock_call_ai_delta_patch.side_effect = mock_call_ai_delta
 
         # Mock the task DB fetch
-        async def mock_task_fetch(session):
-            # This is a hack: we need to patch the session.execute inside the function
-            # But we can't easily. Instead, we'll patch the AsyncSessionLocal context manager.
-            # We'll do that inside the process_task_assign call.
-            pass
-
-        # Instead, we'll patch the session inside process_task_assign
         with patch('worker.main.AsyncSessionLocal') as mock_session:
             mock_conn = AsyncMock()
             mock_session.return_value.__aenter__.return_value = mock_conn
@@ -176,8 +180,6 @@ async def test_process_task_assign_integration():
             mock_conn.execute.return_value = mock_result
 
             # Mock the loop handler
-            mock_handler = AsyncMock()
-            mock_handler.run = AsyncMock(return_value={"success": True, "iterations": 2, "output": {}})
             mock_registry_get.return_value = DefaultLoopHandler
             mock_registry_default.return_value = DefaultLoopHandler
 

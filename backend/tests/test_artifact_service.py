@@ -56,9 +56,9 @@ async def test_get_artifact():
         mock_conn = AsyncMock()
         mock_session.return_value.__aenter__.return_value = mock_conn
 
-        # Use AsyncMock for the result object
-        mock_result = AsyncMock()
-        mock_result.fetchone = AsyncMock(return_value=(mock_data,))
+        # Use MagicMock for fetchone (not AsyncMock)
+        mock_result = MagicMock()
+        mock_result.fetchone.return_value = (mock_data,)
         mock_conn.execute.return_value = mock_result
 
         artifact = await service.get_artifact("art-123")
@@ -82,9 +82,9 @@ async def test_list_artifacts():
         mock_conn = AsyncMock()
         mock_session.return_value.__aenter__.return_value = mock_conn
 
-        # Use AsyncMock for the result object
-        mock_result = AsyncMock()
-        mock_result.fetchall = AsyncMock(return_value=[(mock_data[0],)])
+        # Use MagicMock for fetchall (not AsyncMock)
+        mock_result = MagicMock()
+        mock_result.fetchall.return_value = [(mock_data[0],)]
         mock_conn.execute.return_value = mock_result
 
         artifacts = await service.list_artifacts("g-test")
