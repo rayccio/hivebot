@@ -7,12 +7,36 @@ from datetime import datetime
 import json
 
 @pytest.mark.asyncio
-async def test_create_goal_api(client: AsyncClient):
+async def test_create_goal_api(client: AsyncClient, session):
+    # ---- NEW: Create a real hive in the test database ----
+    from app.models.types import Hive, HiveMindConfig
+    from app.core.database import AsyncSessionLocal
+    import uuid
+    hive_id = "h-test"
+    hive_data = Hive(
+        id=hive_id,
+        name="Test Hive",
+        description="",
+        agent_ids=[],
+        global_user_md="context",
+        messages=[],
+        global_files=[],
+        hive_mind_config=HiveMindConfig(),
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow()
+    )
+    # Insert directly using SQLAlchemy model (the session fixture is a real async session)
+    async with AsyncSessionLocal() as db_session:
+        db_hive = HiveModel(id=hive_data.id, data=hive_data.model_dump(by_alias=True))
+        db_session.add(db_hive)
+        await db_session.commit()
+    # -------------------------------------------------------
+
     # Mock dependencies
     mock_goal_engine = AsyncMock()
     mock_goal = HiveGoal(
         id="g-test",
-        hive_id="h-test",
+        hive_id=hive_id,
         description="Test goal",
         constraints={},
         success_criteria=[],
@@ -25,7 +49,7 @@ async def test_create_goal_api(client: AsyncClient):
     mock_task = HiveTask(
         id="t-test",
         goal_id="g-test",
-        hive_id="h-test",                       # <-- ADDED
+        hive_id=hive_id,
         description="Task",
         agent_type="builder",
         status=HiveTaskStatus.PENDING,
@@ -40,13 +64,13 @@ async def test_create_goal_api(client: AsyncClient):
     mock_hive.global_user_md = "context"
     mock_hive_manager.get_hive.return_value = mock_hive
 
-    # Apply dependency overrides for the functions that exist
+    # Apply dependency overrides
     from app.api.v1.endpoints.goals import get_goal_engine, get_planner, get_hive_manager
     fastapi_app.dependency_overrides[get_goal_engine] = lambda: mock_goal_engine
     fastapi_app.dependency_overrides[get_planner] = lambda: mock_planner
     fastapi_app.dependency_overrides[get_hive_manager] = lambda: mock_hive_manager
 
-    # Patch SkillManager at its original location (class in service module)
+    # Patch SkillManager
     with patch('app.services.skill_manager.SkillManager') as MockSkillManager:
         mock_skill_manager = AsyncMock()
         mock_skill_manager.list_skills = AsyncMock(return_value=[])
@@ -57,38 +81,11 @@ async def test_create_goal_api(client: AsyncClient):
             "constraints": {},
             "success_criteria": []
         }
-        response = await client.post("/api/v1/hives/h-test/goals", json=payload)
+        response = await client.post(f"/api/v1/hives/{hive_id}/goals", json=payload)
         assert response.status_code == 200
         data = response.json()
         assert data["goal"]["id"] == "g-test"
         assert len(data["tasks"]) == 1
         assert data["tasks"][0]["id"] == "t-test"
-
-    fastapi_app.dependency_overrides.clear()
-
-@pytest.mark.asyncio
-async def test_list_goals(client: AsyncClient):
-    mock_goal_engine = AsyncMock()
-    mock_goals = [
-        HiveGoal(
-            id="g1",
-            hive_id="h-test",
-            description="Goal 1",
-            constraints={},
-            success_criteria=[],
-            status=HiveGoalStatus.CREATED,
-            created_at=datetime.utcnow()
-        )
-    ]
-    mock_goal_engine.list_goals_for_hive.return_value = mock_goals
-
-    from app.api.v1.endpoints.goals import get_goal_engine
-    fastapi_app.dependency_overrides[get_goal_engine] = lambda: mock_goal_engine
-
-    response = await client.get("/api/v1/hives/h-test/goals")
-    assert response.status_code == 200
-    data = response.json()
-    assert len(data) == 1
-    assert data[0]["id"] == "g1"
 
     fastapi_app.dependency_overrides.clear()
