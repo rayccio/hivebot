@@ -2,16 +2,15 @@ import pytest
 from httpx import AsyncClient
 from unittest.mock import AsyncMock, patch, MagicMock
 from app.main import app as fastapi_app
-from app.models.types import HiveGoal, HiveGoalStatus, HiveTask, HiveTaskStatus, Hive
+from app.models.types import HiveGoal, HiveGoalStatus, HiveTask, HiveTaskStatus, Hive, HiveMindConfig
+from app.models.db_models import HiveModel  # <-- ADDED
 from datetime import datetime
 import json
 
 @pytest.mark.asyncio
 async def test_create_goal_api(client: AsyncClient, session):
-    # ---- NEW: Create a real hive in the test database ----
-    from app.models.types import Hive, HiveMindConfig
+    # ---- Create a real hive in the test database ----
     from app.core.database import AsyncSessionLocal
-    import uuid
     hive_id = "h-test"
     hive_data = Hive(
         id=hive_id,
@@ -25,12 +24,12 @@ async def test_create_goal_api(client: AsyncClient, session):
         created_at=datetime.utcnow(),
         updated_at=datetime.utcnow()
     )
-    # Insert directly using SQLAlchemy model (the session fixture is a real async session)
+    # Insert directly using SQLAlchemy model
     async with AsyncSessionLocal() as db_session:
         db_hive = HiveModel(id=hive_data.id, data=hive_data.model_dump(by_alias=True))
         db_session.add(db_hive)
         await db_session.commit()
-    # -------------------------------------------------------
+    # ---------------------------------------------------
 
     # Mock dependencies
     mock_goal_engine = AsyncMock()

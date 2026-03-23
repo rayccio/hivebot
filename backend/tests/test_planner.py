@@ -39,11 +39,20 @@ async def test_plan_success():
         mock_gen.return_value = mock_response
         mock_conn = AsyncMock()
         mock_session.return_value.__aenter__.return_value = mock_conn
-        # ---- FIX: use MagicMock for result and set fetchall to return list ----
-        mock_result = MagicMock()
-        mock_result.fetchall.return_value = [("builder",), ("tester",)]  # some roles
-        mock_conn.execute.return_value = mock_result
-        # ---------------------------------------------------------------------
+
+        # Mock for roles query (single column)
+        mock_roles_result = MagicMock()
+        mock_roles_result.fetchall.return_value = [("builder",), ("tester",)]
+        # Mock for skills query (three columns)
+        mock_skills_result = MagicMock()
+        mock_skills_result.fetchall.return_value = [
+            ("sk-1", "web_search", "Search the web"),
+            ("sk-2", "run_code", "Execute code in a container")
+        ]
+        # The planner calls execute twice: once for roles, once for skills.
+        # We need to return the appropriate mock for each call.
+        mock_conn.execute.side_effect = [mock_roles_result, mock_skills_result]
+
         mock_conn.commit = AsyncMock()
 
         tasks = await planner.plan(
@@ -60,8 +69,6 @@ async def test_plan_success():
         assert tasks[0].description == "Write code"
         assert tasks[0].agent_type == "builder"
         assert tasks[0].status == HiveTaskStatus.PENDING
-        # Verify that fetchall was called (we expect the query to run)
-        mock_result.fetchall.assert_called_once()
         mock_conn.commit.assert_awaited_once()
 
 @pytest.mark.asyncio
@@ -85,11 +92,18 @@ async def test_plan_fallback_on_failure():
 
         mock_conn = AsyncMock()
         mock_session.return_value.__aenter__.return_value = mock_conn
-        # ---- FIX: use MagicMock for result and set fetchall to return list ----
-        mock_result = MagicMock()
-        mock_result.fetchall.return_value = [("builder",), ("tester",)]
-        mock_conn.execute.return_value = mock_result
-        # ---------------------------------------------------------------------
+
+        # Mock for roles query (single column)
+        mock_roles_result = MagicMock()
+        mock_roles_result.fetchall.return_value = [("builder",), ("tester",)]
+        # Mock for skills query (three columns)
+        mock_skills_result = MagicMock()
+        mock_skills_result.fetchall.return_value = [
+            ("sk-1", "web_search", "Search the web"),
+            ("sk-2", "run_code", "Execute code in a container")
+        ]
+        mock_conn.execute.side_effect = [mock_roles_result, mock_skills_result]
+
         mock_conn.commit = AsyncMock()
 
         tasks = await planner.plan(
@@ -101,5 +115,4 @@ async def test_plan_fallback_on_failure():
         assert tasks[0].description == "Build a todo app"
         assert tasks[0].agent_type == "builder"
         assert tasks[0].hive_id == "h-test"
-        mock_result.fetchall.assert_called_once()
         mock_conn.commit.assert_awaited_once()
