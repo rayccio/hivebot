@@ -16,7 +16,13 @@ async def test_create_artifact(tmp_path):
     with patch('app.services.artifact_service.AsyncSessionLocal') as mock_session:
         mock_conn = AsyncMock()
         mock_session.return_value.__aenter__.return_value = mock_conn
+
+        # Mock _get_next_version to return 1 (no need for database)
         service._get_next_version = AsyncMock(return_value=1)
+
+        # Mock the result of the INSERT (no need to check)
+        mock_conn.execute = AsyncMock()
+        mock_conn.commit = AsyncMock()
 
         content = b"test content"
         artifact = await service.create_artifact(
@@ -39,6 +45,7 @@ async def test_create_artifact(tmp_path):
         mock_conn.execute.assert_awaited_once()
         mock_conn.commit.assert_awaited_once()
 
+
 @pytest.mark.asyncio
 async def test_get_artifact():
     service = ArtifactService()
@@ -50,25 +57,31 @@ async def test_get_artifact():
         "content": "",
         "version": 1,
         "status": "draft",
-        "created_at": datetime.utcnow().isoformat()
+        "created_at": datetime.utcnow().isoformat(),
+        "parent_artifact_id": None,
+        "layer_id": "core"
     }
+
     with patch('app.services.artifact_service.AsyncSessionLocal') as mock_session:
         mock_conn = AsyncMock()
         mock_session.return_value.__aenter__.return_value = mock_conn
 
-        # Use MagicMock for fetchone (not AsyncMock)
-        mock_result = MagicMock()
-        mock_result.fetchone.return_value = (mock_data,)
-        mock_conn.execute.return_value = mock_result
+        # Mock the result of execute to return a cursor that can be awaited
+        mock_result = AsyncMock()
+        mock_result.fetchone = AsyncMock(return_value=(mock_data,))
+        mock_conn.execute = AsyncMock(return_value=mock_result)
 
         artifact = await service.get_artifact("art-123")
         assert artifact is not None
         assert artifact.id == "art-123"
+        assert artifact.goal_id == "g-test"
+        assert artifact.task_id == "t-test"
+
 
 @pytest.mark.asyncio
 async def test_list_artifacts():
     service = ArtifactService()
-    mock_data = [{
+    mock_data = {
         "id": "art-123",
         "goal_id": "g-test",
         "task_id": "t-test",
@@ -76,20 +89,24 @@ async def test_list_artifacts():
         "content": "",
         "version": 1,
         "status": "draft",
-        "created_at": datetime.utcnow().isoformat()
-    }]
+        "created_at": datetime.utcnow().isoformat(),
+        "parent_artifact_id": None,
+        "layer_id": "core"
+    }
+
     with patch('app.services.artifact_service.AsyncSessionLocal') as mock_session:
         mock_conn = AsyncMock()
         mock_session.return_value.__aenter__.return_value = mock_conn
 
-        # Use MagicMock for fetchall (not AsyncMock)
-        mock_result = MagicMock()
-        mock_result.fetchall.return_value = [(mock_data[0],)]
-        mock_conn.execute.return_value = mock_result
+        # Mock the result of execute to return a cursor that can be awaited
+        mock_result = AsyncMock()
+        mock_result.fetchall = AsyncMock(return_value=[(mock_data,)])
+        mock_conn.execute = AsyncMock(return_value=mock_result)
 
         artifacts = await service.list_artifacts("g-test")
         assert len(artifacts) == 1
         assert artifacts[0].id == "art-123"
+
 
 @pytest.mark.asyncio
 async def test_delete_artifact():
@@ -106,6 +123,7 @@ async def test_delete_artifact():
         mock_conn = AsyncMock()
         mock_session.return_value.__aenter__.return_value = mock_conn
         mock_conn.execute = AsyncMock()
+        mock_conn.commit = AsyncMock()
 
         result = await service.delete_artifact("art-123")
         assert result is True

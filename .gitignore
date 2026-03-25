@@ -20,6 +20,9 @@ global_files/
 data/
 *.db
 
+# Layers (if cloned locally for development)
+layers/
+
 # Frontend
 node_modules/
 dist/
@@ -30,11 +33,22 @@ frontend/build/
 *.pid
 docker-compose.override.yml
 
-# IDE
+# IDE and editor files
 .vscode/
 .idea/
 *.swp
+*.swo
 
+# Temporary / export files
 project_export.md
 export.cjs
 .setup.sh.swo
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
