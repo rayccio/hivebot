@@ -11,15 +11,15 @@ async def test_skill_executor_permission_check():
         mock_session.return_value.__aenter__.return_value = mock_conn
 
         # Create a mock result proxy for the skills query
-        mock_skill_result = AsyncMock()
-        mock_skill_result.scalar = AsyncMock(return_value="sk-123")
+        mock_skill_result = MagicMock()
+        mock_skill_result.scalar.return_value = "sk-123"
 
         # Create a mock result proxy for the versions query
-        mock_version_result = AsyncMock()
-        mock_version_result.fetchone = AsyncMock(return_value=("sv-123", {
+        mock_version_result = MagicMock()
+        mock_version_result.fetchone.return_value = ("sv-123", {
             "code": "def run(input, config): return {'result': 'ok'}",
             "language": "python"
-        }))
+        })
 
         # Side effect that returns the appropriate mock result based on the query text
         async def execute_side_effect(query, params):
