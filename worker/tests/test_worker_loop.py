@@ -54,6 +54,7 @@ async def test_default_loop_handler_success_first_try():
             return ""
 
     mock_save_artifact = AsyncMock()
+    mock_update_artifact_status = AsyncMock()
     mock_skill_executor = AsyncMock()
 
     handler = DefaultLoopHandler()
@@ -67,12 +68,14 @@ async def test_default_loop_handler_success_first_try():
         project_id=project_id,
         skill_executor=mock_skill_executor,
         call_ai_delta=mock_call_ai_delta,
-        save_artifact=mock_save_artifact
+        save_artifact=mock_save_artifact,
+        update_artifact_status=mock_update_artifact_status
     )
 
     assert result["success"] is True
     assert result["iterations"] == 1
-    assert mock_save_artifact.call_count == 3  # code, test result, final
+    # code, test result, final = 3 calls
+    assert mock_save_artifact.call_count == 3
 
 @pytest.mark.asyncio
 async def test_default_loop_handler_failure_then_fix():
@@ -111,6 +114,7 @@ async def test_default_loop_handler_failure_then_fix():
             return ""
 
     mock_save_artifact = AsyncMock()
+    mock_update_artifact_status = AsyncMock()
     mock_skill_executor = AsyncMock()
 
     # Patch MAX_ITERATIONS to 2 to speed up test
@@ -126,7 +130,8 @@ async def test_default_loop_handler_failure_then_fix():
             project_id=project_id,
             skill_executor=mock_skill_executor,
             call_ai_delta=mock_call_ai_delta,
-            save_artifact=mock_save_artifact
+            save_artifact=mock_save_artifact,
+            update_artifact_status=mock_update_artifact_status
         )
 
     assert result["success"] is True
@@ -159,8 +164,9 @@ async def test_process_task_assign_integration():
         else:
             return ""
 
-    # Mock save_artifact to avoid HTTP calls
+    # Mock save_artifact and update_artifact_status to avoid HTTP calls
     mock_save_artifact = AsyncMock(return_value={})
+    mock_update_artifact_status = AsyncMock()
 
     with patch('worker.main.get_agent_from_db', new_callable=AsyncMock) as mock_get, \
          patch('worker.main.update_agent_state', new_callable=AsyncMock) as mock_update, \
@@ -170,11 +176,13 @@ async def test_process_task_assign_integration():
          patch('worker.main.redis.from_url', new_callable=AsyncMock) as mock_redis, \
          patch('worker.main.log_execution', new_callable=AsyncMock) as mock_log, \
          patch('worker.main.call_ai_delta', new_callable=AsyncMock) as mock_call_ai_delta_patch, \
-         patch('worker.main.save_artifact', new_callable=AsyncMock) as mock_save_artifact_patch:
+         patch('worker.main.save_artifact', new_callable=AsyncMock) as mock_save_artifact_patch, \
+         patch('worker.main.update_artifact_status', new_callable=AsyncMock) as mock_update_artifact_status_patch:
 
         mock_get.return_value = agent_data
         mock_call_ai_delta_patch.side_effect = mock_call_ai_delta
         mock_save_artifact_patch.side_effect = mock_save_artifact
+        mock_update_artifact_status_patch.side_effect = mock_update_artifact_status
 
         # Mock the task DB fetch
         with patch('worker.main.AsyncSessionLocal') as mock_session:
@@ -196,5 +204,5 @@ async def test_process_task_assign_integration():
             await process_task_assign(agent_id, task_id, description, input_data, goal_id, hive_id, simulation=False)
 
             mock_register.assert_awaited_once_with(agent_id)
-            # Also ensure the loop ran without errors
+            # Ensure the loop ran without errors
             mock_save_artifact_patch.assert_awaited()

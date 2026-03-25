@@ -5,34 +5,34 @@ from skill_executor import SkillExecutor
 @pytest.mark.asyncio
 async def test_skill_executor_permission_check():
     executor = SkillExecutor()
-    result = await executor.execute(
-        skill_name="web_search",
-        params={"query": "test"},
-        simulation=False,
-        allowed_skills=["web_search"]
-    )
-    # In a real test, we mock the DB and skill execution
-    # We'll just check that the permission check passed.
-    # Actually, because the skill is allowed, it will try to fetch the skill version.
-    # We need to mock that.
-    # Let's mock the DB call to return a dummy skill.
+    # Mock the database calls and container execution
     with patch('skill_executor.AsyncSessionLocal') as mock_session:
         mock_conn = AsyncMock()
         mock_session.return_value.__aenter__.return_value = mock_conn
 
-        # Mock the skill query result
-        mock_skill_row = MagicMock()
-        mock_skill_row.scalar.return_value = "sk-123"
-        mock_conn.execute.return_value = mock_skill_row
+        # Mock the skill query result to return a skill ID
+        mock_skill_result = MagicMock()
+        mock_skill_result.scalar.return_value = "sk-123"
+        mock_conn.execute.return_value = mock_skill_result
 
         # Mock the version query result
-        mock_version_row = MagicMock()
-        mock_version_row.fetchone.return_value = ("sv-123", {"code": "def run(input, config): return {'result': 'ok'}", "language": "python"})
-        mock_conn.execute.return_value = mock_version_row
+        mock_version_result = MagicMock()
+        mock_version_result.fetchone.return_value = ("sv-123", {
+            "code": "def run(input, config): return {'result': 'ok'}",
+            "language": "python"
+        })
+        # Need to return the same result for the second execute
+        async def execute_side_effect(query, params):
+            if "SELECT id FROM skills" in query:
+                return mock_skill_result
+            else:
+                return mock_version_result
+        mock_conn.execute.side_effect = execute_side_effect
 
-        # Mock container_manager.run_skill_in_container
+        # Mock container manager
         with patch('skill_executor.container_manager.run_skill_in_container', new_callable=AsyncMock) as mock_run:
             mock_run.return_value = {"result": "ok"}
+
             result = await executor.execute(
                 skill_name="web_search",
                 params={"query": "test"},
