@@ -4,9 +4,6 @@ import json
 
 @pytest.mark.asyncio
 async def test_coding_planner_success():
-    from planner.planner import CodingPlanner
-    planner = CodingPlanner()
-
     # Mock the LLM response
     mock_response = {
         "tasks": [
@@ -28,9 +25,24 @@ async def test_coding_planner_success():
         "reasoning": "split frontend/backend"
     }
 
-    with patch('planner.planner.generate_with_messages', new_callable=AsyncMock) as mock_gen:
+    # Mock the settings.secrets.get to return a provider config
+    mock_provider_config = {
+        "providers": {
+            "openai": {
+                "models": {
+                    "gpt-4o": {"is_primary": True, "enabled": True}
+                }
+            }
+        }
+    }
+
+    with patch('planner.planner.generate_with_messages', new_callable=AsyncMock) as mock_gen, \
+         patch('planner.planner.settings.secrets.get', return_value=mock_provider_config):
         mock_gen.return_value = json.dumps(mock_response)
 
+        # Import after patching to ensure the module uses the patched dependencies
+        from planner.planner import CodingPlanner
+        planner = CodingPlanner()
         tasks = await planner.plan(
             goal_text="Build a web app",
             hive_context="",
@@ -52,11 +64,21 @@ async def test_coding_planner_success():
 
 @pytest.mark.asyncio
 async def test_coding_planner_fallback():
-    from planner.planner import CodingPlanner
-    planner = CodingPlanner()
+    # Mock settings to return a provider config (required for fallback path)
+    mock_provider_config = {
+        "providers": {
+            "openai": {
+                "models": {
+                    "gpt-4o": {"is_primary": True, "enabled": True}
+                }
+            }
+        }
+    }
 
-    # Simulate LLM failure
-    with patch('planner.planner.generate_with_messages', new_callable=AsyncMock, side_effect=Exception("AI error")):
+    with patch('planner.planner.generate_with_messages', new_callable=AsyncMock, side_effect=Exception("AI error")), \
+         patch('planner.planner.settings.secrets.get', return_value=mock_provider_config):
+        from planner.planner import CodingPlanner
+        planner = CodingPlanner()
         tasks = await planner.plan(
             goal_text="Build a web app",
             hive_context="",

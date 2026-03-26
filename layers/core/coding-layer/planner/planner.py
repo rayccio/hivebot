@@ -16,8 +16,21 @@ except ImportError:
     class HiveTaskStatus:
         PENDING = "pending"
 
-from app.services.litellm_service import generate_with_messages
-from app.core.config import settings
+# Safe imports for litellm and settings
+try:
+    from app.services.litellm_service import generate_with_messages
+except ImportError:
+    # Mock for tests
+    async def generate_with_messages(messages, config):
+        raise NotImplementedError("generate_with_messages not available in test environment")
+
+try:
+    from app.core.config import settings
+except ImportError:
+    # Mock for tests
+    class DummySettings:
+        secrets = type('', (), {'get': lambda self, key, default=None: {}})()
+    settings = DummySettings()
 
 logger = logging.getLogger(__name__)
 
