@@ -168,3 +168,22 @@ jobs:
         REDIS_PORT: 6379
         INTERNAL_API_KEY: test-key
         ORCHESTRATOR_URL: http://localhost:8000
+
+  test-coding-layer:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+    - name: Install dependencies
+      run: |
+        cd layers/core/coding-layer
+        pip install --upgrade pip
+        pip install -r requirements-test.txt
+    - name: Run tests
+      run: |
+        cd layers/core/coding-layer
+        export PYTHONPATH=$PWD:$PYTHONPATH
+        pytest tests/ -v
