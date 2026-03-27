@@ -62,6 +62,10 @@ class Settings(BaseSettings):
     def DATA_DIR(self) -> Path:
         return Path(self.HIVEBOT_DATA) / "data"
 
+    @property
+    def LAYERS_DIR(self) -> Path:
+        return Path("/app/layers")
+
     _secrets: SecretsManager = PrivateAttr()
 
     def __init__(self, **kwargs):
@@ -70,6 +74,7 @@ class Settings(BaseSettings):
         self.AGENTS_DIR.mkdir(parents=True, exist_ok=True)
         self.GLOBAL_FILES_DIR.mkdir(parents=True, exist_ok=True)
         self.DATA_DIR.mkdir(parents=True, exist_ok=True)
+        # LAYERS_DIR is not created here – it's mounted from the host
 
         self._secrets = SecretsManager(
             secrets_path=self.SECRETS_DIR / "secrets.enc",

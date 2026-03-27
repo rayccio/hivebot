@@ -1,6 +1,10 @@
 import logging
 import os
+import sys
 from pathlib import Path
+
+# Add layers directory to sys.path so that custom planners and loop handlers can be imported
+sys.path.insert(0, '/app/layers')
 
 # Allow log directory to be overridden by environment variable
 LOG_DIR = Path(os.getenv('HIVEBOT_LOG_DIR', '/app/logs'))
@@ -145,6 +149,15 @@ def create_app() -> FastAPI:
         await vector_service.connect()
         await vector_service.ensure_collection(dim=384)
         logger.info("Qdrant ready")
+
+        # Load core layers from filesystem
+        try:
+            from .services.layer_manager import LayerManager
+            layer_manager = LayerManager()
+            await layer_manager.load_core_layers()
+            logger.info("Core layers loaded.")
+        except Exception as e:
+            logger.error(f"Failed to load core layers: {e}")
 
         if not settings.secrets.get("GLOBAL_SETTINGS"):
             default_settings = GlobalSettings(

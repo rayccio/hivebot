@@ -1,5 +1,6 @@
 import asyncio
 import os
+import sys
 import json
 import logging
 import asyncpg
@@ -12,6 +13,9 @@ from sqlalchemy import select, text
 import re
 from typing import Optional
 from pathlib import Path
+
+# Add layers directory to sys.path so that custom loop handlers and planners can be imported
+sys.path.insert(0, '/app/layers')
 
 # Configure logging to file – allow override via environment variable
 LOG_DIR = Path(os.getenv('HIVEBOT_LOG_DIR', '/app/logs'))
