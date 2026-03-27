@@ -24,21 +24,20 @@ class SkillRepository:
         result = await self.db.execute(
             select(SkillModel).where(SkillModel.id == skill_id)
         )
-        db_skill = await result.scalar_one_or_none()
+        db_skill = result.scalar_one_or_none()
         if db_skill:
             return Skill(**db_skill.data)
         return None
 
     async def get_all(self) -> list[Skill]:
         result = await self.db.execute(select(SkillModel))
-        db_skills = await result.scalars().all()
+        db_skills = result.scalars().all()
         return [Skill(**s.data) for s in db_skills]
 
     async def update(self, skill_id: str, updates: dict) -> Skill | None:
         skill = await self.get(skill_id)
         if not skill:
             return None
-        # updates is the new data dictionary (already prepared by service)
         data = prepare_json_data(updates)
         await self.db.execute(
             update(SkillModel)

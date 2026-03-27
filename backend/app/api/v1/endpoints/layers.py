@@ -37,7 +37,7 @@ class LayerSkillResponse(BaseModel):
     skill_description: str
     skill_type: str
 
-# --- Request models for Phase 2 ---
+# --- Request models ---
 class InstallLayerRequest(BaseModel):
     git_url: str
     version: Optional[str] = None
@@ -49,7 +49,7 @@ class LayerConfigResponse(BaseModel):
     config: Dict[str, Any]
 
 # ----------------------------------------------------------------------
-# Existing endpoints (no change except fetchall -> all)
+# Endpoints
 # ----------------------------------------------------------------------
 @router.get("", response_model=List[LayerResponse])
 async def list_layers(
@@ -59,7 +59,7 @@ async def list_layers(
     result = await db.execute(
         text("SELECT id, name, description, version, author, dependencies, enabled, created_at, updated_at FROM layers ORDER BY created_at")
     )
-    rows = await result.all()
+    rows = result.all()   # No await here
     layers = []
     for r in rows:
         layers.append(LayerResponse(
@@ -85,7 +85,7 @@ async def list_layer_roles(
         text("SELECT layer_id, role_name, soul_md, identity_md, tools_md, role_type, priority FROM layer_roles WHERE layer_id = :layer_id ORDER BY priority DESC"),
         {"layer_id": layer_id}
     )
-    rows = await result.all()
+    rows = result.all()
     if not rows:
         exists = await db.execute(text("SELECT 1 FROM layers WHERE id = :layer_id"), {"layer_id": layer_id})
         if not (await exists.fetchone()):
@@ -119,7 +119,7 @@ async def list_layer_skills(
         """),
         {"layer_id": layer_id}
     )
-    rows = await result.all()
+    rows = result.all()
     if not rows:
         exists = await db.execute(text("SELECT 1 FROM layers WHERE id = :layer_id"), {"layer_id": layer_id})
         if not (await exists.fetchone()):
@@ -137,14 +137,13 @@ async def list_layer_skills(
     return skills
 
 # ----------------------------------------------------------------------
-# New Phase 2 endpoints
+# Management endpoints
 # ----------------------------------------------------------------------
 @router.post("/install", status_code=201)
 async def install_layer(
     request: InstallLayerRequest,
     current_user=Depends(get_current_user)
 ):
-    """Install a layer from a Git repository."""
     try:
         manager = LayerManager()
         layer_id = await manager.install_layer(request.git_url, request.version)
@@ -157,7 +156,6 @@ async def enable_layer(
     layer_id: str,
     current_user=Depends(get_current_user)
 ):
-    """Enable a layer (make its roles and skills available)."""
     try:
         manager = LayerManager()
         success = await manager.enable_layer(layer_id)
@@ -172,7 +170,6 @@ async def disable_layer(
     layer_id: str,
     current_user=Depends(get_current_user)
 ):
-    """Disable a layer."""
     manager = LayerManager()
     success = await manager.disable_layer(layer_id)
     if not success:
@@ -185,7 +182,6 @@ async def get_layer_config(
     hive_id: Optional[str] = None,
     current_user=Depends(get_current_user)
 ):
-    """Retrieve configuration for a layer (optionally per hive)."""
     manager = LayerManager()
     if not hive_id:
         raise HTTPException(status_code=400, detail="hive_id query parameter required")
@@ -201,7 +197,6 @@ async def update_layer_config(
     payload: LayerConfigUpdate = Body(...),
     current_user=Depends(get_current_user)
 ):
-    """Update configuration for a layer in a specific hive."""
     if not hive_id:
         raise HTTPException(status_code=400, detail="hive_id query parameter required")
     manager = LayerManager()
@@ -215,7 +210,6 @@ async def get_layer_config_schema(
     layer_id: str,
     current_user=Depends(get_current_user)
 ):
-    """Return the JSON schema for layer configuration."""
     manager = LayerManager()
     schema = await manager.get_layer_config_schema(layer_id)
     if schema is None:
@@ -227,7 +221,6 @@ async def list_layer_loop_handlers(
     layer_id: str,
     current_user=Depends(get_current_user)
 ):
-    """List loop handlers registered by this layer."""
     manager = LayerManager()
     handlers = await manager.list_loop_handlers(layer_id)
     return handlers
