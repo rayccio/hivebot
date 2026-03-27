@@ -49,7 +49,7 @@ class LayerConfigResponse(BaseModel):
     config: Dict[str, Any]
 
 # ----------------------------------------------------------------------
-# Existing endpoints (no change)
+# Existing endpoints (no change except fetchall -> all)
 # ----------------------------------------------------------------------
 @router.get("", response_model=List[LayerResponse])
 async def list_layers(
@@ -59,7 +59,7 @@ async def list_layers(
     result = await db.execute(
         text("SELECT id, name, description, version, author, dependencies, enabled, created_at, updated_at FROM layers ORDER BY created_at")
     )
-    rows = await result.fetchall()
+    rows = await result.all()
     layers = []
     for r in rows:
         layers.append(LayerResponse(
@@ -85,7 +85,7 @@ async def list_layer_roles(
         text("SELECT layer_id, role_name, soul_md, identity_md, tools_md, role_type, priority FROM layer_roles WHERE layer_id = :layer_id ORDER BY priority DESC"),
         {"layer_id": layer_id}
     )
-    rows = await result.fetchall()
+    rows = await result.all()
     if not rows:
         exists = await db.execute(text("SELECT 1 FROM layers WHERE id = :layer_id"), {"layer_id": layer_id})
         if not (await exists.fetchone()):
@@ -119,7 +119,7 @@ async def list_layer_skills(
         """),
         {"layer_id": layer_id}
     )
-    rows = await result.fetchall()
+    rows = await result.all()
     if not rows:
         exists = await db.execute(text("SELECT 1 FROM layers WHERE id = :layer_id"), {"layer_id": layer_id})
         if not (await exists.fetchone()):
