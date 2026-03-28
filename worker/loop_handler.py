@@ -190,28 +190,31 @@ Provide the fixed code. Output only the corrected code, no explanations."""
 # ==================== Registry ====================
 
 class LoopHandlerRegistry:
-    """Loads and provides loop handlers."""
+    """Loads and provides loop handlers. Always includes a built‑in default."""
 
     def __init__(self):
-        self._handlers = {}  # name -> class
+        self._handlers = {
+            'default': DefaultLoopHandler,   # built‑in fallback
+        }
 
     async def load_from_db(self, db_session):
-        """Query loop_handlers table and import classes."""
+        """Query loop_handlers table and import classes. Overrides if a handler with the same name exists."""
         from sqlalchemy import text
         result = await db_session.execute(
             text("SELECT id, name, class_path FROM loop_handlers")
         )
         rows = result.fetchall()
         for row in rows:
+            name = row[1]
             class_path = row[2]
             try:
                 module_name, class_name = class_path.rsplit(".", 1)
                 module = importlib.import_module(module_name)
                 cls = getattr(module, class_name)
-                self._handlers[row[1]] = cls  # store by name
-                logger.info(f"Loaded loop handler: {row[1]} -> {class_path}")
+                self._handlers[name] = cls   # override if name already exists
+                logger.info(f"Loaded loop handler: {name} -> {class_path}")
             except Exception as e:
-                logger.error(f"Failed to load loop handler {row[1]} from {class_path}: {e}")
+                logger.error(f"Failed to load loop handler {name} from {class_path}: {e}")
 
     def get(self, name: str):
         """Return the handler class (not instance) for the given name."""

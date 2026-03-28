@@ -502,6 +502,10 @@ async def main():
     # Load loop handler registry
     async with AsyncSessionLocal() as session:
         await loop_handler_registry.load_from_db(session)
+        if loop_handler_registry.get('default'):
+            logger.info("Default loop handler is registered.")
+        else:
+            logger.error("Default loop handler is NOT registered!")
 
     try:
         await worker_loop()
