@@ -76,7 +76,7 @@ class ExecutionLogger:
             params["limit"] = limit
             params["offset"] = offset
             result = await session.execute(text(query), params)
-            rows = await result.fetchall()
+            rows = result.fetchall()
             logs = []
             for r in rows:
                 logs.append(ExecutionLog(
@@ -109,7 +109,7 @@ class ExecutionLogger:
                 """),
                 {"goal_id": goal_id, "task_id": task_id, "limit": limit}
             )
-            rows = await result.fetchall()
+            rows = result.fetchall()
             logs = []
             for r in rows:
                 logs.append(ExecutionLog(
