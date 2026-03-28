@@ -21,7 +21,7 @@ data/
 *.db
 
 # Layers (if cloned locally for development)
-layers/
+#layers/
 
 # Frontend
 node_modules/
