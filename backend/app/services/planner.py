@@ -15,9 +15,10 @@ logger = logging.getLogger(__name__)
 
 class Planner:
     async def _get_enabled_layers(self):
+        """Fetch only enabled layers (core is always considered enabled)."""
         async with AsyncSessionLocal() as session:
             result = await session.execute(
-                text("SELECT id, name, custom_planner_class FROM layers WHERE enabled = TRUE OR id = 'core'")
+                text("SELECT id, name FROM layers WHERE enabled = TRUE OR id = 'core'")
             )
             return result.fetchall()
 
