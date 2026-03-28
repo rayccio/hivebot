@@ -40,8 +40,8 @@
     "deploy_script"
   ],
   "planner": {
-    "class": "planner.planner.CodingPlanner",
-    "goal_pattern": "(?i)(build|create|develop|make).*(website|app|api|web|application)",
+    "class": "core.coding.planner.planner.CodingPlanner",
+    "goal_pattern": "(?i)(build|create|develop|make|design).*",
     "priority": 10
   },
   "loop_handler": {

@@ -58,7 +58,7 @@ class DefaultLoopHandler(BaseLoopHandler):
         update_artifact_status,
         layer_id: Optional[str] = "core"
     ) -> Dict[str, Any]:
-        from worker.constants import (
+        from .constants import (
             BUILDER_SOUL, BUILDER_IDENTITY, BUILDER_TOOLS,
             TESTER_SOUL, TESTER_IDENTITY, TESTER_TOOLS,
             REVIEWER_SOUL, REVIEWER_IDENTITY, REVIEWER_TOOLS,
