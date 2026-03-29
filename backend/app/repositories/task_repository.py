@@ -40,7 +40,7 @@ class TaskRepository:
             text("SELECT data FROM tasks WHERE data->>'hiveId' = :hive_id"),
             {"hive_id": hive_id}
         )
-        rows = result.fetchall()
+        rows = await result.all()          # <-- changed from fetchall()
         return [HiveTask.model_validate(r[0]) for r in rows]
 
     async def get_by_goal_id(self, goal_id: str) -> List[HiveTask]:
@@ -48,7 +48,7 @@ class TaskRepository:
             text("SELECT data FROM tasks WHERE data->>'goalId' = :goal_id"),
             {"goal_id": goal_id}
         )
-        rows = result.fetchall()
+        rows = await result.all()          # <-- changed from fetchall()
         return [HiveTask.model_validate(r[0]) for r in rows]
 
     async def get_by_agent_id(self, agent_id: str) -> List[HiveTask]:
@@ -56,7 +56,7 @@ class TaskRepository:
             text("SELECT data FROM tasks WHERE data->>'assigned_agent_id' = :agent_id"),
             {"agent_id": agent_id}
         )
-        rows = result.fetchall()
+        rows = await result.all()          # <-- changed from fetchall()
         return [HiveTask.model_validate(r[0]) for r in rows]
 
     async def update(self, task_id: str, updates: dict) -> Optional[HiveTask]:

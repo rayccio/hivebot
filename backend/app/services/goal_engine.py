@@ -43,7 +43,7 @@ class GoalEngine:
                 text("SELECT data FROM goals WHERE id = :id"),
                 {"id": goal_id}
             )
-            row = result.fetchone()
+            row = await result.first()          # <-- changed from fetchone()
             if row:
                 return HiveGoal.model_validate(row[0])
         return None
@@ -97,7 +97,7 @@ class GoalEngine:
                 text("SELECT data FROM goals WHERE data->>'hive_id' = :hive_id ORDER BY (data->>'created_at')::timestamptz DESC"),
                 {"hive_id": hive_id}
             )
-            rows = result.fetchall()
+            rows = await result.all()          # <-- changed from fetchall()
             return [HiveGoal.model_validate(r[0]) for r in rows]
 
     async def list_goals_by_status(self, statuses: List[HiveGoalStatus]) -> List[HiveGoal]:
@@ -107,5 +107,5 @@ class GoalEngine:
                 text("SELECT data FROM goals WHERE data->>'status' = ANY(:statuses) ORDER BY (data->>'created_at')::timestamptz"),
                 {"statuses": status_strings}
             )
-            rows = result.fetchall()
+            rows = await result.all()          # <-- changed from fetchall()
             return [HiveGoal.model_validate(r[0]) for r in rows]
